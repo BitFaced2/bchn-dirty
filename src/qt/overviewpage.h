@@ -15,6 +15,14 @@ class TransactionFilterProxy;
 class TxViewDelegate;
 class PlatformStyle;
 class WalletModel;
+class SendCoinsDialog;
+class ReceiveCoinsDialog;
+class TransactionView;
+
+QT_BEGIN_NAMESPACE
+class QDialog;
+class QPushButton;
+QT_END_NAMESPACE
 
 namespace Ui {
 class OverviewPage;
@@ -36,6 +44,12 @@ public:
     void setClientModel(ClientModel *clientModel);
     void setWalletModel(WalletModel *walletModel);
     void showOutOfSyncWarning(bool fShow);
+    void embedSubWidgets(SendCoinsDialog *send, ReceiveCoinsDialog *receive,
+                        TransactionView *history, QPushButton *exportButton);
+    /** Reparent an external status/network widget into the top-right of
+     *  the Balances card. Ownership is not transferred; caller retains
+     *  responsibility for lifetime. */
+    void installNetworkStatusWidget(QWidget *w);
 
 public Q_SLOTS:
     void setBalance(const interfaces::WalletBalances &balances);
@@ -53,10 +67,20 @@ private:
     TxViewDelegate *txdelegate;
     std::unique_ptr<TransactionFilterProxy> filter;
 
+    QDialog *m_sendAdvancedDialog = nullptr;
+    QDialog *m_receiveAdvancedDialog = nullptr;
+    QDialog *m_receiveHistoryDialog = nullptr;
+    QWidget *m_sendFeeWidget = nullptr;
+    QWidget *m_receiveHistoryWidget = nullptr;
+    class QHBoxLayout *m_topRow = nullptr;
+    QLabel *m_receiveQrLabel = nullptr;
+    QLabel *m_receiveAddressLabel = nullptr;
+
 private Q_SLOTS:
     void updateDisplayUnit();
     void handleTransactionClicked(const QModelIndex &index);
     void updateAlerts(const QString &warnings);
     void updateWatchOnlyLabels(bool showWatchOnly);
     void handleOutOfSyncWarningClicks();
+    void refreshReceiveAddress();
 };

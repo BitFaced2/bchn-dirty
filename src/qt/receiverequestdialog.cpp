@@ -104,6 +104,16 @@ ReceiveRequestDialog::ReceiveRequestDialog(QWidget *parent)
     ui->lblQRCode->setVisible(false);
 #endif
 
+    // outUri is display-only; keyboard focus would blink a text cursor
+    // in the panel. Kill focus and let selection stay mouse-driven.
+    ui->outUri->setFocusPolicy(Qt::NoFocus);
+    ui->outUri->setTextInteractionFlags(
+        Qt::TextSelectableByMouse | Qt::LinksAccessibleByMouse);
+
+    // Default width is 487 — the URI + address rows wrap onto two
+    // lines at that size. Bump it so both single-line.
+    resize(640, 620);
+
     connect(ui->btnSaveAs, &QPushButton::clicked, ui->lblQRCode,
             &QRImageWidget::saveImage);
 }
@@ -141,31 +151,62 @@ void ReceiveRequestDialog::update() {
 
     QString uri = GUIUtil::formatBitcoinURI(info);
     ui->btnSaveAs->setEnabled(false);
+
+    // Cypherpunk-styled payment info panel: Rajdhani caption + muted
+    // labels, JetBrains Mono monospace values with the theme's
+    // purple/green accent colors.
+    const QString kLabelStyle =
+        "font-family:'Rajdhani','Inter',sans-serif;"
+        "color:#7B857F;font-weight:700;letter-spacing:1.5px;";
+    const QString kMonoValue =
+        "font-family:'JetBrains Mono',monospace;font-size:10pt;";
+
     QString html;
-    html += "<html><font face='verdana, arial, helvetica, sans-serif'>";
-    html += "<b>" + tr("Payment information") + "</b><br>";
-    html += "<b>" + tr("URI") + "</b>: ";
-    html += "<a href=\"" + uri + "\">" + GUIUtil::HtmlEscape(uri) + "</a><br>";
-    html += "<b>" + tr("Address") +
-            "</b>: " + GUIUtil::HtmlEscape(info.address) + "<br>";
+    html += "<html><body style=\"font-family:'Rajdhani','Inter',sans-serif;"
+            "color:#E8ECEA;\">";
+    html += "<div style=\"color:#7B857F;font-weight:700;letter-spacing:2.5px;"
+            "font-size:12pt;margin-bottom:10px;\">"
+            + tr("Payment information").toUpper() + "</div>";
+    html += "<table cellspacing='0' cellpadding='5'>";
+
+    auto addRow = [&](const QString &label, const QString &value,
+                      const QString &valueColor, bool isLink) {
+        html += "<tr>";
+        html += "<td style=\"" + kLabelStyle + "\">" + label.toUpper()
+                + "</td>";
+        html += "<td style=\"" + kMonoValue + "color:" + valueColor + ";\">";
+        if (isLink) {
+            html += "<a href=\"" + value + "\" style=\"" + kMonoValue
+                    + "color:" + valueColor + ";text-decoration:none;\">"
+                    + GUIUtil::HtmlEscape(value) + "</a>";
+        } else {
+            html += value;
+        }
+        html += "</td></tr>";
+    };
+
+    addRow(tr("URI"), uri, QStringLiteral("#9D4EDD"), /*isLink=*/true);
+    addRow(tr("Address"), GUIUtil::HtmlEscape(info.address),
+           QStringLiteral("#0AC18E"), /*isLink=*/false);
     if (info.amount != Amount::zero()) {
-        html += "<b>" + tr("Amount") + "</b>: " +
-                BitcoinUnits::formatHtmlWithUnit(
-                    model->getOptionsModel()->getDisplayUnit(), info.amount) +
-                "<br>";
+        addRow(tr("Amount"),
+               BitcoinUnits::formatHtmlWithUnit(
+                   model->getOptionsModel()->getDisplayUnit(), info.amount),
+               QStringLiteral("#E8ECEA"), /*isLink=*/false);
     }
     if (!info.label.isEmpty()) {
-        html += "<b>" + tr("Label") +
-                "</b>: " + GUIUtil::HtmlEscape(info.label) + "<br>";
+        addRow(tr("Label"), GUIUtil::HtmlEscape(info.label),
+               QStringLiteral("#E8ECEA"), /*isLink=*/false);
     }
     if (!info.message.isEmpty()) {
-        html += "<b>" + tr("Message") +
-                "</b>: " + GUIUtil::HtmlEscape(info.message) + "<br>";
+        addRow(tr("Message"), GUIUtil::HtmlEscape(info.message),
+               QStringLiteral("#E8ECEA"), /*isLink=*/false);
     }
     if (model->isMultiwallet()) {
-        html += "<b>" + tr("Wallet") +
-                "</b>: " + GUIUtil::HtmlEscape(model->getWalletName()) + "<br>";
+        addRow(tr("Wallet"), GUIUtil::HtmlEscape(model->getWalletName()),
+               QStringLiteral("#E8ECEA"), /*isLink=*/false);
     }
+    html += "</table></body></html>";
     ui->outUri->setText(html);
 
 #ifdef USE_QRCODE
