@@ -45,7 +45,7 @@ OptionsDialog::OptionsDialog(QWidget *parent, bool enableWallet)
     ui->threadsScriptVerif->setMinimum(-GetNumCores());
     ui->threadsScriptVerif->setMaximum(GetNumCores());
     ui->pruneWarning->setVisible(false);
-    ui->pruneWarning->setStyleSheet("QLabel { color: red; }");
+    ui->pruneWarning->setStyleSheet("QLabel { color: #E85D6B; }");
 
     ui->pruneSize->setEnabled(false);
     connect(ui->prune, &QPushButton::toggled, ui->pruneSize,
@@ -346,7 +346,7 @@ void OptionsDialog::togglePruneWarning(bool enabled) {
 }
 
 void OptionsDialog::showRestartWarning(bool fPersistent) {
-    ui->statusLabel->setStyleSheet("QLabel { color: red; }");
+    ui->statusLabel->setStyleSheet("QLabel { color: #E85D6B; }");
 
     if (fPersistent) {
         ui->statusLabel->setText(
@@ -366,7 +366,7 @@ void OptionsDialog::thirdPartyTxWarning(bool fPersistent)
     QString str = ui->thirdPartyTxUrls->displayText();
 
     if (!OptionsModel::isValidThirdPartyTxUrlString(str)) {
-        ui->statusLabel->setStyleSheet("QLabel { color: red; }");
+        ui->statusLabel->setStyleSheet("QLabel { color: #E85D6B; }");
         ui->statusLabel->setText(tr("Not a valid HTTP or HTTPS URL."));
     } else { // It is a valid URL
         showRestartWarning(fPersistent);
@@ -393,7 +393,7 @@ void OptionsDialog::updateProxyValidationState() {
         clearStatusLabel();
     } else {
         setOkButtonState(false);
-        ui->statusLabel->setStyleSheet("QLabel { color: red; }");
+        ui->statusLabel->setStyleSheet("QLabel { color: #E85D6B; }");
         ui->statusLabel->setText(tr("The supplied proxy address is invalid."));
     }
 }

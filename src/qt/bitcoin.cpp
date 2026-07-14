@@ -45,11 +45,15 @@
 
 #include <QApplication>
 #include <QDebug>
+#include <QFile>
+#include <QFontDatabase>
 #include <QLibraryInfo>
 #include <QLocale>
 #include <QMessageBox>
+#include <QPalette>
 #include <QSettings>
 #include <QStringList>
+#include <QTextStream>
 #include <QThread>
 #include <QTimer>
 #include <QTranslator>
@@ -201,6 +205,53 @@ BitcoinApplication::BitcoinApplication(interfaces::Node &node, int &argc,
       optionsModel(nullptr), clientModel(nullptr), window(nullptr),
       pollShutdownTimer(nullptr), returnValue(0), platformStyle(nullptr) {
     setQuitOnLastWindowClosed(false);
+
+    for (const QString &alias : {
+             QStringLiteral(":/fonts/inter-regular"),
+             QStringLiteral(":/fonts/inter-medium"),
+             QStringLiteral(":/fonts/inter-semibold"),
+             QStringLiteral(":/fonts/inter-bold"),
+             QStringLiteral(":/fonts/jbmono-regular"),
+             QStringLiteral(":/fonts/jbmono-medium"),
+             QStringLiteral(":/fonts/jbmono-bold"),
+             QStringLiteral(":/fonts/orbitron-regular"),
+             QStringLiteral(":/fonts/orbitron-medium"),
+             QStringLiteral(":/fonts/orbitron-semibold"),
+             QStringLiteral(":/fonts/orbitron-bold"),
+             QStringLiteral(":/fonts/rajdhani-regular"),
+             QStringLiteral(":/fonts/rajdhani-medium"),
+             QStringLiteral(":/fonts/rajdhani-semibold"),
+             QStringLiteral(":/fonts/rajdhani-bold"),
+         }) {
+        QFontDatabase::addApplicationFont(alias);
+    }
+    QFont uiFont(QStringLiteral("Inter"));
+    uiFont.setPointSize(10);
+    setFont(uiFont);
+
+    QPalette pal;
+    pal.setColor(QPalette::Window,          QColor(0x0B, 0x0F, 0x0D));
+    pal.setColor(QPalette::WindowText,      QColor(0xE8, 0xEC, 0xEA));
+    pal.setColor(QPalette::Base,            QColor(0x14, 0x19, 0x17));
+    pal.setColor(QPalette::AlternateBase,   QColor(0x1C, 0x23, 0x20));
+    pal.setColor(QPalette::Text,            QColor(0xE8, 0xEC, 0xEA));
+    pal.setColor(QPalette::Button,          QColor(0x14, 0x19, 0x17));
+    pal.setColor(QPalette::ButtonText,      QColor(0xE8, 0xEC, 0xEA));
+    pal.setColor(QPalette::Highlight,       QColor(0x0A, 0xC1, 0x8E));
+    pal.setColor(QPalette::HighlightedText, QColor(0x0B, 0x0F, 0x0D));
+    pal.setColor(QPalette::ToolTipBase,     QColor(0x14, 0x19, 0x17));
+    pal.setColor(QPalette::ToolTipText,     QColor(0xE8, 0xEC, 0xEA));
+    pal.setColor(QPalette::Link,            QColor(0x9D, 0x4E, 0xDD));
+    pal.setColor(QPalette::Disabled, QPalette::WindowText,
+                 QColor(0x4A, 0x54, 0x4F));
+    pal.setColor(QPalette::Disabled, QPalette::Text,
+                 QColor(0x4A, 0x54, 0x4F));
+    setPalette(pal);
+
+    QFile themeFile(":/css/cypher");
+    if (themeFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        setStyleSheet(QTextStream(&themeFile).readAll());
+    }
 }
 
 void BitcoinApplication::setupPlatformStyle() {

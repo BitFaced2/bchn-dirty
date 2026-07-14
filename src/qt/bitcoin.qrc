@@ -3,6 +3,7 @@
         <file alias="bitcoin">res/icons/bitcoin.png</file>
         <file alias="bitcoin_noletters">res/icons/bitcoin_noletters.png</file>
         <file alias="bitcoin_splash">res/icons/bitcoin_splash.png</file>
+        <file alias="bitcoin_cash_circle">res/icons/bitcoin_cash_circle.png</file>
         <file alias="address-book">res/icons/address-book.png</file>
         <file alias="quit">res/icons/quit.png</file>
         <file alias="send">res/icons/send.png</file>
@@ -94,5 +95,25 @@
         <file alias="spinner-033">res/movies/spinner-033.png</file>
         <file alias="spinner-034">res/movies/spinner-034.png</file>
         <file alias="spinner-035">res/movies/spinner-035.png</file>
+    </qresource>
+    <qresource prefix="/css">
+        <file alias="cypher">res/css/cypher.qss</file>
+    </qresource>
+    <qresource prefix="/fonts">
+        <file alias="inter-regular">res/fonts/Inter-Regular.ttf</file>
+        <file alias="inter-medium">res/fonts/Inter-Medium.ttf</file>
+        <file alias="inter-semibold">res/fonts/Inter-SemiBold.ttf</file>
+        <file alias="inter-bold">res/fonts/Inter-Bold.ttf</file>
+        <file alias="jbmono-regular">res/fonts/JetBrainsMono-Regular.ttf</file>
+        <file alias="jbmono-medium">res/fonts/JetBrainsMono-Medium.ttf</file>
+        <file alias="jbmono-bold">res/fonts/JetBrainsMono-Bold.ttf</file>
+        <file alias="orbitron-regular">res/fonts/Orbitron-Regular.ttf</file>
+        <file alias="orbitron-medium">res/fonts/Orbitron-Medium.ttf</file>
+        <file alias="orbitron-semibold">res/fonts/Orbitron-SemiBold.ttf</file>
+        <file alias="orbitron-bold">res/fonts/Orbitron-Bold.ttf</file>
+        <file alias="rajdhani-regular">res/fonts/Rajdhani-Regular.ttf</file>
+        <file alias="rajdhani-medium">res/fonts/Rajdhani-Medium.ttf</file>
+        <file alias="rajdhani-semibold">res/fonts/Rajdhani-SemiBold.ttf</file>
+        <file alias="rajdhani-bold">res/fonts/Rajdhani-Bold.ttf</file>
     </qresource>
 </RCC>

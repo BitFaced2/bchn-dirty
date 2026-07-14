@@ -1,0 +1,922 @@
+/* ============================================================
+   Cypher BCHN — 2026 dark glass theme
+   Emulates the aesthetic of the user's own Qubes-GUI (Tauri app):
+   layered dark bgs, semi-transparent glass cards, neon glow
+   feel, Orbitron/Rajdhani/Inter/JetBrains Mono typography.
+
+   Palette:
+     bg-primary     #08110D  deepest — main window
+     bg-secondary   #0B1512  layer 2
+     bg-tertiary    #101A16  layer 3
+     bg-elevated    #17221D  hover / active surfaces
+     glass-fill     rgba(23,34,29,0.72)   translucent card fill
+     glass-border   rgba(157,78,221,0.18) subtle purple edge
+     glass-hi       rgba(255,255,255,0.04) inset top highlight (fake)
+     border         #1F2A24  standard border
+     text           #E8ECEA  primary text
+     text-muted     #7B857F  muted / labels
+     text-dim       #4A544F  disabled / hint
+     accent-green   #0AC18E  BCH primary — CTAs, hero balance
+     accent-glow    #0FFFB0  brighter green for hover halo
+     accent-purple  #9D4EDD  secondary — hashes, tx addresses, watch-only
+     accent-purple-glow #C87FFF  hover halo
+     amber          #E8B547  pending / warning
+     danger         #E85D6B  errors
+   ============================================================ */
+
+/* ------------------------- Base ------------------------- */
+QWidget {
+    background-color: #08110D;
+    color: #E8ECEA;
+    font-family: "Inter", "Segoe UI", "Helvetica Neue", sans-serif;
+    font-size: 10pt;
+    selection-background-color: #0AC18E;
+    selection-color: #08110D;
+}
+
+QMainWindow, QDialog {
+    background-color: #08110D;
+}
+
+/* Tooltip — glass style */
+QToolTip {
+    background-color: #17221D;
+    color: #E8ECEA;
+    border: 1px solid rgba(157, 78, 221, 100);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-family: "Inter", "Segoe UI", sans-serif;
+    font-size: 9pt;
+}
+
+/* ------------------------- Menu bar ------------------------- */
+QMenuBar {
+    background-color: transparent;
+    color: #E8ECEA;
+    border-bottom: 1px solid rgba(157, 78, 221, 30);
+    padding: 4px 8px;
+    font-family: "Rajdhani", "Inter", sans-serif;
+    font-weight: 600;
+    font-size: 10pt;
+}
+QMenuBar::item {
+    background: transparent;
+    padding: 6px 12px;
+    color: #7B857F;
+    border-radius: 4px;
+}
+QMenuBar::item:selected {
+    background-color: rgba(157, 78, 221, 25);
+    color: #C87FFF;
+}
+QMenuBar::item:pressed {
+    background-color: rgba(10, 193, 142, 25);
+    color: #0AC18E;
+}
+
+QMenu {
+    background-color: #101A16;
+    color: #E8ECEA;
+    border: 1px solid rgba(157, 78, 221, 60);
+    border-radius: 8px;
+    padding: 6px 0;
+}
+QMenu::item {
+    padding: 8px 24px;
+    color: #E8ECEA;
+    font-family: "Inter", sans-serif;
+}
+QMenu::item:selected {
+    background-color: rgba(10, 193, 142, 30);
+    color: #0AC18E;
+}
+QMenu::separator {
+    height: 1px;
+    background: rgba(157, 78, 221, 40);
+    margin: 6px 10px;
+}
+
+/* ------------------------- Toolbar (top tabs) ------------------------- */
+QToolBar {
+    background-color: transparent;
+    border: none;
+    border-bottom: 1px solid rgba(157, 78, 221, 25);
+    padding: 8px 6px;
+    spacing: 6px;
+}
+QToolBar::separator {
+    background: rgba(157, 78, 221, 40);
+    width: 1px;
+    margin: 6px 8px;
+}
+
+QToolButton {
+    background-color: transparent;
+    color: #7B857F;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 10px 18px;
+    font-family: "Rajdhani", "Inter", sans-serif;
+    font-weight: 600;
+    font-size: 11pt;
+    letter-spacing: 1px;
+}
+QToolButton:hover {
+    background-color: rgba(157, 78, 221, 22);
+    color: #E8ECEA;
+    border-color: rgba(157, 78, 221, 90);
+}
+QToolButton:checked, QToolButton:pressed {
+    background-color: rgba(10, 193, 142, 30);
+    color: #0AC18E;
+    border-color: rgba(10, 193, 142, 140);
+}
+
+/* ------------------------- Buttons ------------------------- */
+QPushButton {
+    background-color: rgba(23, 34, 29, 180);
+    color: #E8ECEA;
+    border: 1px solid rgba(157, 78, 221, 60);
+    border-radius: 8px;
+    padding: 8px 18px;
+    font-family: "Inter", sans-serif;
+    font-weight: 500;
+    min-height: 22px;
+}
+QPushButton:hover {
+    background-color: rgba(157, 78, 221, 35);
+    border-color: rgba(157, 78, 221, 180);
+    color: #E8ECEA;
+}
+QPushButton:pressed {
+    background-color: rgba(10, 193, 142, 45);
+    border-color: #0AC18E;
+    color: #0AC18E;
+}
+QPushButton:default {
+    background-color: rgba(10, 193, 142, 30);
+    border-color: #0AC18E;
+    color: #0AC18E;
+    font-weight: 600;
+}
+QPushButton:default:hover {
+    background-color: rgba(10, 193, 142, 60);
+    border-color: #0FFFB0;
+    color: #0FFFB0;
+}
+QPushButton:disabled {
+    background-color: rgba(20, 26, 31, 120);
+    color: #4A544F;
+    border-color: #1F2A24;
+}
+
+/* ------------------------- Line edits / plain text ------------------------- */
+QLineEdit, QPlainTextEdit, QTextEdit {
+    background-color: rgba(11, 21, 18, 220);
+    color: #E8ECEA;
+    border: 1px solid #1F2A24;
+    border-radius: 8px;
+    padding: 8px 12px;
+    selection-background-color: rgba(157, 78, 221, 120);
+    selection-color: #E8ECEA;
+    font-family: "JetBrains Mono", "Consolas", "Courier New", monospace;
+    font-size: 10pt;
+}
+QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus {
+    border-color: #0AC18E;
+    background-color: rgba(11, 21, 18, 240);
+}
+QLineEdit:disabled {
+    background-color: #0B1512;
+    color: #4A544F;
+}
+QLineEdit:read-only {
+    color: #7B857F;
+}
+
+/* ReceiveRequestDialog payment info panel — muted purple hairline
+   instead of the aggressive green focus ring, since the QTextEdit
+   is read-only and immediately focus-grabs on dialog open. */
+QTextEdit#outUri, QTextEdit#outUri:focus {
+    border: 1px solid rgba(157, 78, 221, 55);
+    background-color: rgba(8, 17, 13, 240);
+    padding: 14px 18px;
+}
+QRImageWidget#lblQRCode {
+    background: transparent;
+    padding: 8px;
+}
+/* Copy URI / Copy Address / Save Image — tighten to match theme */
+QDialog#ReceiveRequestDialog QPushButton {
+    min-width: 96px;
+    padding: 8px 16px;
+    font-family: "Rajdhani", "Inter", sans-serif;
+    letter-spacing: 1.5px;
+    font-weight: 600;
+}
+
+/* ------------------------- Spinbox / amount field ------------------------- */
+QAbstractSpinBox {
+    background-color: rgba(11, 21, 18, 220);
+    color: #E8ECEA;
+    border: 1px solid #1F2A24;
+    border-radius: 8px;
+    padding: 8px 12px;
+    selection-background-color: rgba(157, 78, 221, 120);
+    selection-color: #E8ECEA;
+    font-family: "JetBrains Mono", "Consolas", "Courier New", monospace;
+    font-size: 10pt;
+    min-height: 22px;
+}
+QAbstractSpinBox:focus {
+    border-color: #0AC18E;
+    background-color: rgba(11, 21, 18, 240);
+}
+QAbstractSpinBox:disabled {
+    background-color: #0B1512;
+    color: #4A544F;
+}
+/* Kill the up/down spinbox chrome entirely — the number field is a plain
+   line edit; scroll-wheel + keyboard still adjust the value. */
+QAbstractSpinBox::up-button,
+QAbstractSpinBox::down-button {
+    width: 0px;
+    height: 0px;
+    border: none;
+    background: transparent;
+}
+QAbstractSpinBox::up-arrow,
+QAbstractSpinBox::down-arrow {
+    image: none;
+    width: 0px;
+    height: 0px;
+}
+
+/* ------------------------- Node status card (right of Balances) ------------------------- */
+QFrame#networkStatusPanel {
+    background-color: rgba(23, 34, 29, 180);
+    border: 1px solid rgba(157, 78, 221, 45);
+    border-radius: 14px;
+    padding: 10px 12px;
+    min-height: 130px;
+}
+QFrame#networkStatusPanel QLabel {
+    background: transparent;
+    border: none;
+    padding: 0;
+    color: #E8ECEA;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10pt;
+    font-weight: 500;
+}
+QFrame#networkStatusPanel QLabel#cockpitBlockNumber {
+    color: #0AC18E;
+    font-family: "Orbitron", "JetBrains Mono", monospace;
+    font-size: 64pt;
+    font-weight: 900;
+    letter-spacing: 3px;
+    padding: 0 8px;
+}
+
+/* ------------------------- Card chevron (collapse toggle) ------------------------- */
+QPushButton#cardChevron {
+    color: #7B857F;
+    background: transparent;
+    border: none;
+    font-size: 12pt;
+    padding: 0;
+}
+QPushButton#cardChevron:hover {
+    color: #0AC18E;
+}
+
+/* ------------------------- Card expander (advanced options) ------------------------- */
+QPushButton#cardExpander {
+    color: #7B857F;
+    background: transparent;
+    border: 1px solid rgba(157, 78, 221, 60);
+    border-radius: 6px;
+    font-size: 12pt;
+    padding: 0;
+}
+QPushButton#cardExpander:hover {
+    color: #9D4EDD;
+    border-color: #9D4EDD;
+}
+
+/* ------------------------- Send amount row breathing room ------------------------- */
+SendCoinsEntry QCheckBox#checkboxSubtractFeeFromAmount {
+    margin-left: 18px;
+    margin-right: 12px;
+}
+SendCoinsEntry QPushButton#useAvailableBalanceButton {
+    margin-left: 8px;
+}
+
+/* ------------------------- Send makeover — hero fields, prominent Send button ------------------------- */
+/* Send fields inherit the default QLineEdit / QAbstractSpinBox rules so
+   their height exactly matches Receive's fields — a Send-specific font
+   override was making Send rows a couple pixels taller and Receive spread
+   while Send couldn't. */
+QPushButton#sendButton {
+    background: #0AC18E;
+    color: #08110D;
+    border: none;
+    border-radius: 10px;
+    padding: 8px 28px;
+    font-family: "Rajdhani", sans-serif;
+    font-size: 12pt;
+    font-weight: 700;
+    letter-spacing: 3px;
+    min-height: 22px;
+    text-transform: uppercase;
+}
+QPushButton#sendButton:hover  { background: #0AD5A3; }
+QPushButton#sendButton:pressed { background: #08A67A; }
+QPushButton#sendButton:disabled { background: #17221D; color: #4A544F; }
+
+/* ------------------------- Receive QR panel ------------------------- */
+QLabel#receiveQrLabel {
+    background: #FFFFFF;
+    border-radius: 10px;
+    color: #7B857F;
+}
+QLabel#receiveAddressLabel {
+    color: #9D4EDD;
+    background: transparent;
+    font-family: "JetBrains Mono", "Consolas", monospace;
+    font-size: 8pt;
+    padding: 4px;
+    border: 1px solid rgba(157, 78, 221, 40);
+    border-radius: 6px;
+}
+QPushButton#receiveNewAddrButton {
+    background: transparent;
+    color: #0AC18E;
+    border: 1px solid rgba(10, 193, 142, 100);
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-family: "Rajdhani", sans-serif;
+    font-weight: 600;
+    font-size: 10pt;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+}
+QPushButton#receiveNewAddrButton:hover {
+    background: rgba(10, 193, 142, 30);
+    color: #0AD5A3;
+}
+
+/* ------------------------- Combo box ------------------------- */
+QComboBox {
+    background-color: rgba(23, 34, 29, 180);
+    color: #E8ECEA;
+    border: 1px solid rgba(157, 78, 221, 60);
+    border-radius: 8px;
+    padding: 8px 12px;
+    min-height: 22px;
+}
+QComboBox:hover, QComboBox:focus {
+    border-color: #0AC18E;
+}
+QComboBox::drop-down {
+    border: none;
+    width: 24px;
+}
+QComboBox::down-arrow {
+    image: none;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid #9D4EDD;
+    margin-right: 8px;
+}
+QComboBox QAbstractItemView {
+    background-color: #101A16;
+    color: #E8ECEA;
+    border: 1px solid rgba(157, 78, 221, 100);
+    border-radius: 8px;
+    selection-background-color: rgba(10, 193, 142, 40);
+    selection-color: #0AC18E;
+    outline: 0;
+    padding: 4px;
+}
+
+/* ------------------------- Checkbox / Radio ------------------------- */
+QCheckBox, QRadioButton {
+    color: #E8ECEA;
+    spacing: 10px;
+    background: transparent;
+    font-family: "Inter", sans-serif;
+}
+QCheckBox::indicator, QRadioButton::indicator {
+    width: 16px;
+    height: 16px;
+    border: 1.5px solid rgba(157, 78, 221, 100);
+    background: rgba(11, 21, 18, 200);
+}
+QCheckBox::indicator {
+    border-radius: 3px;
+}
+QRadioButton::indicator {
+    border-radius: 8px;
+}
+QCheckBox::indicator:checked, QRadioButton::indicator:checked {
+    background: #0AC18E;
+    border-color: #0AC18E;
+}
+QCheckBox::indicator:hover, QRadioButton::indicator:hover {
+    border-color: #0FFFB0;
+}
+
+/* ------------------------- Frames (glass cards) ------------------------- */
+QFrame {
+    background-color: transparent;
+}
+QFrame[frameShape="4"], QFrame[frameShape="5"] {
+    color: #1F2A24;
+}
+/* The overview cards + generic named frames get glass treatment */
+QFrame#frame,
+QFrame#frame_2,
+QFrame#frameSend,
+QFrame#frameReceive,
+QFrame#frameHistory {
+    background-color: rgba(23, 34, 29, 180);
+    border: 1px solid rgba(157, 78, 221, 45);
+    border-radius: 14px;
+    padding: 10px;
+}
+/* Suppress the nested StyledPanel borders shipped inside SendCoinsEntry
+   and ReceiveCoinsDialog — the outer glass card already provides the
+   framing, and without this the Send button ends up visually outside its
+   inner panel while the Receive buttons look inside theirs. */
+QFrame#SendCoins,
+QFrame#frame2 {
+    background: transparent;
+    border: none;
+}
+/* The QScrollArea shipped inside SendCoinsDialog draws its own outline
+   which shows through as a stray white rectangle around the form. */
+QScrollArea#scrollArea,
+QScrollArea#scrollArea > QWidget > QWidget#scrollAreaWidgetContents,
+QScrollArea#scrollArea > QWidget#scrollAreaWidgetContents {
+    background: transparent;
+    border: none;
+}
+/* frameFee is hidden by us, but its StyledPanel border can still bleed
+   through as a purple hairline below the amount row. Kill it explicitly. */
+QFrame#frameFee,
+QFrame#frameFeeSelection,
+QFrame#frameCoinControl {
+    background: transparent;
+    border: none;
+}
+/* Nuclear option — kill borders on every frame INSIDE the send dialog
+   descendant tree. Any lingering StyledPanel border was showing as the
+   purple hairline below the amount row. */
+SendCoinsDialog QFrame {
+    border: none;
+    background: transparent;
+}
+/* Nuclear option — kill borders on every frame INSIDE the send dialog
+   descendant tree. Any lingering StyledPanel border was showing as the
+   purple hairline below the amount row. */
+SendCoinsDialog QFrame {
+    border: none;
+    background: transparent;
+}
+/* Very subtle top edge highlight (fake glass) via a border-image trick — not perfect but adds depth */
+
+/* ------------------------- Labels ------------------------- */
+QLabel {
+    background-color: transparent;
+    color: #E8ECEA;
+    font-family: "Inter", sans-serif;
+}
+
+/* Overview — HERO: total balance in Orbitron (that display cyberpunk feel) */
+QLabel#labelTotal {
+    color: #0AC18E;
+    font-family: "Orbitron", "JetBrains Mono", monospace;
+    font-weight: 700;
+    font-size: 32pt;
+    letter-spacing: 3px;
+    padding: 14px 0 12px 0;
+}
+/* Overview — secondary: available balance */
+QLabel#labelBalance {
+    color: #0AC18E;
+    font-family: "JetBrains Mono", "Consolas", monospace;
+    font-weight: 400;
+    font-size: 11pt;
+    letter-spacing: 1px;
+}
+/* Overview — pending / immature */
+QLabel#labelUnconfirmed, QLabel#labelImmature {
+    color: #E8B547;
+    font-family: "JetBrains Mono", "Consolas", monospace;
+    font-weight: 500;
+    font-size: 11pt;
+    letter-spacing: 1px;
+}
+/* Watch-only side */
+QLabel#labelWatchTotal {
+    color: #C87FFF;
+    font-family: "Orbitron", "JetBrains Mono", monospace;
+    font-weight: 600;
+    font-size: 18pt;
+    letter-spacing: 2px;
+    padding: 14px 0 12px 0;
+}
+QLabel#labelWatchAvailable {
+    color: #9D4EDD;
+    font-family: "JetBrains Mono", "Consolas", monospace;
+    font-weight: 500;
+    font-size: 11pt;
+    letter-spacing: 1px;
+}
+QLabel#labelWatchPending, QLabel#labelWatchImmature {
+    color: #9D4EDD;
+    font-family: "JetBrains Mono", "Consolas", monospace;
+    font-weight: 400;
+    font-size: 10pt;
+}
+
+/* Section titles — Rajdhani for that cypherpunk cyber vibe, uppercase */
+QLabel#label_5, QLabel#label_4 {
+    color: #0AC18E;
+    font-family: "Rajdhani", "Inter", sans-serif;
+    font-weight: 700;
+    font-size: 11pt;
+    letter-spacing: 3px;
+    padding: 4px 0 10px 0;
+}
+
+/* Column headers — now at the bottom of the grid, kept small and muted */
+QLabel#labelSpendable, QLabel#labelWatchonly {
+    color: #4A544F;
+    font-family: "Rajdhani", "Inter", sans-serif;
+    font-weight: 500;
+    font-size: 8pt;
+    letter-spacing: 2px;
+    padding-top: 6px;
+}
+
+/* Balance row labels — secondary rows */
+QLabel#labelBalanceText, QLabel#labelPendingText, QLabel#labelImmatureText {
+    color: #7B857F;
+    font-family: "Rajdhani", "Inter", sans-serif;
+    font-weight: 500;
+    font-size: 9pt;
+    letter-spacing: 2px;
+}
+/* Total: label — Rajdhani uppercase-feel next to the hero number */
+QLabel#labelTotalText {
+    color: #0AC18E;
+    font-family: "Rajdhani", "Inter", sans-serif;
+    font-weight: 700;
+    font-size: 13pt;
+    letter-spacing: 3px;
+    padding: 14px 0 12px 0;
+}
+
+/* Separator lines */
+QFrame#line, QFrame#lineWatchBalance {
+    background-color: rgba(157, 78, 221, 40);
+    max-height: 1px;
+    border: none;
+}
+
+/* Alert banner */
+QLabel#labelAlerts {
+    background-color: rgba(232, 181, 71, 20);
+    color: #E8B547;
+    border: 1px solid rgba(232, 181, 71, 120);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-family: "Inter", sans-serif;
+    font-weight: 500;
+}
+
+/* Wallet-sync warning icon button */
+QPushButton#labelWalletStatus {
+    background: transparent;
+    border: none;
+    padding: 0;
+}
+QPushButton#labelWalletStatus:hover {
+    background: transparent;
+}
+
+/* ------------------------- Item views (tables, lists, trees) ------------------------- */
+QAbstractItemView, QListView, QTableView, QTreeView {
+    background-color: rgba(11, 21, 18, 150);
+    color: #E8ECEA;
+    alternate-background-color: rgba(23, 34, 29, 90);
+    border: 1px solid #1F2A24;
+    border-radius: 10px;
+    gridline-color: #1F2A24;
+    selection-background-color: rgba(10, 193, 142, 35);
+    selection-color: #0AC18E;
+    outline: 0;
+    padding: 4px;
+    font-family: "Inter", sans-serif;
+}
+QAbstractItemView::item {
+    padding: 8px 6px;
+    border: none;
+    border-radius: 6px;
+}
+QAbstractItemView::item:hover {
+    background-color: rgba(157, 78, 221, 25);
+}
+QAbstractItemView::item:selected {
+    background-color: rgba(10, 193, 142, 40);
+    color: #0AC18E;
+}
+
+QHeaderView::section {
+    background-color: rgba(23, 34, 29, 200);
+    color: #7B857F;
+    padding: 8px 10px;
+    border: none;
+    border-right: 1px solid #1F2A24;
+    border-bottom: 1px solid rgba(157, 78, 221, 40);
+    font-family: "Rajdhani", "Inter", sans-serif;
+    font-weight: 600;
+    font-size: 9pt;
+    letter-spacing: 2px;
+}
+QHeaderView::section:hover {
+    color: #0AC18E;
+}
+
+/* Transactions list on Overview */
+QListView#listTransactions {
+    background-color: transparent;
+    border: none;
+    padding: 4px;
+}
+QListView#listTransactions::item {
+    padding: 10px 6px;
+    border-bottom: 1px solid rgba(157, 78, 221, 20);
+    border-radius: 0;
+}
+QListView#listTransactions::item:hover {
+    background-color: rgba(157, 78, 221, 20);
+    border-radius: 8px;
+}
+
+/* ------------------------- Tabs ------------------------- */
+QTabWidget::pane {
+    background-color: transparent;
+    border: 1px solid rgba(157, 78, 221, 40);
+    border-radius: 10px;
+    top: -1px;
+}
+QTabBar::tab {
+    background-color: rgba(23, 34, 29, 180);
+    color: #7B857F;
+    padding: 10px 18px;
+    border: 1px solid rgba(157, 78, 221, 40);
+    border-bottom: none;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    margin-right: 4px;
+    font-family: "Rajdhani", "Inter", sans-serif;
+    font-weight: 600;
+    letter-spacing: 1px;
+}
+QTabBar::tab:hover {
+    color: #E8ECEA;
+    background-color: rgba(157, 78, 221, 40);
+}
+QTabBar::tab:selected {
+    background-color: #08110D;
+    color: #0AC18E;
+    border-color: #0AC18E;
+    border-bottom: 1px solid #08110D;
+}
+
+/* ------------------------- Scroll bars (cyberpunk) ------------------------- */
+QScrollBar:vertical {
+    background: transparent;
+    width: 8px;
+    border: none;
+    margin: 4px 2px;
+}
+QScrollBar::handle:vertical {
+    background: rgba(157, 78, 221, 60);
+    border-radius: 4px;
+    min-height: 30px;
+}
+QScrollBar::handle:vertical:hover {
+    background: rgba(157, 78, 221, 140);
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0;
+    background: transparent;
+}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+    background: transparent;
+}
+QScrollBar:horizontal {
+    background: transparent;
+    height: 8px;
+    border: none;
+    margin: 2px 4px;
+}
+QScrollBar::handle:horizontal {
+    background: rgba(157, 78, 221, 60);
+    border-radius: 4px;
+    min-width: 30px;
+}
+QScrollBar::handle:horizontal:hover {
+    background: rgba(157, 78, 221, 140);
+}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+    width: 0;
+    background: transparent;
+}
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
+    background: transparent;
+}
+
+/* ------------------------- Status bar ------------------------- */
+QStatusBar {
+    background-color: transparent;
+    color: #7B857F;
+    border-top: 1px solid rgba(157, 78, 221, 30);
+    font-family: "Rajdhani", "Inter", sans-serif;
+    font-weight: 600;
+    letter-spacing: 1px;
+    padding: 4px 8px;
+}
+QStatusBar::item {
+    border: none;
+}
+QStatusBar QLabel {
+    color: #7B857F;
+    padding: 0 4px;
+}
+
+/* ------------------------- Progress bar ------------------------- */
+QProgressBar {
+    background-color: rgba(11, 21, 18, 200);
+    border: 1px solid rgba(157, 78, 221, 60);
+    border-radius: 6px;
+    text-align: center;
+    color: #E8ECEA;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 9pt;
+    height: 18px;
+}
+QProgressBar::chunk {
+    background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #0AC18E, stop:1 #9D4EDD);
+    border-radius: 5px;
+    margin: 1px;
+}
+
+/* ------------------------- Group box ------------------------- */
+QGroupBox {
+    background-color: transparent;
+    border: 1px solid rgba(157, 78, 221, 50);
+    border-radius: 10px;
+    margin-top: 14px;
+    padding-top: 10px;
+    color: #E8ECEA;
+    font-family: "Rajdhani", "Inter", sans-serif;
+    font-weight: 700;
+    letter-spacing: 2px;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 14px;
+    padding: 0 8px;
+    color: #0AC18E;
+    background-color: #08110D;
+}
+
+/* ------------------------- Splitters ------------------------- */
+QSplitter::handle {
+    background-color: rgba(157, 78, 221, 40);
+}
+QSplitter::handle:hover {
+    background-color: #0AC18E;
+}
+QSplitter::handle:horizontal { width: 2px; }
+QSplitter::handle:vertical { height: 2px; }
+
+/* ------------------------- RPC console / debug ------------------------- */
+QPlainTextEdit#messagesWidget {
+    background-color: #08110D;
+    color: #0AC18E;
+    font-family: "JetBrains Mono", "Consolas", monospace;
+    font-size: 10pt;
+    border: 1px solid rgba(157, 78, 221, 60);
+    border-radius: 8px;
+    padding: 10px;
+}
+QLineEdit#lineEdit {
+    background-color: rgba(11, 21, 18, 240);
+    color: #0AC18E;
+    font-family: "JetBrains Mono", "Consolas", monospace;
+    border: 1px solid #0AC18E;
+    border-radius: 6px;
+    padding: 8px 12px;
+}
+
+/* ------------------------- Dial / slider ------------------------- */
+QSlider::groove:horizontal {
+    background: rgba(23, 34, 29, 200);
+    height: 4px;
+    border-radius: 2px;
+}
+QSlider::handle:horizontal {
+    background: #0AC18E;
+    width: 14px;
+    height: 14px;
+    margin: -5px 0;
+    border-radius: 7px;
+}
+QSlider::handle:horizontal:hover {
+    background: #0FFFB0;
+}
+QSlider::sub-page:horizontal {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #9D4EDD, stop:1 #0AC18E);
+    border-radius: 2px;
+}
+
+/* ============================================================
+   Custom title bar (frameless window)
+   ============================================================ */
+QWidget#customTitleBar {
+    background-color: #0B1512;
+    border-bottom: 1px solid rgba(157, 78, 221, 40);
+}
+QLabel#titleBarTitle {
+    color: #7B857F;
+    font-family: "Rajdhani", "Inter", sans-serif;
+    font-weight: 600;
+    font-size: 10pt;
+    letter-spacing: 2px;
+    padding: 0 6px;
+}
+/* Menu bar embedded in title bar */
+QMenuBar#titleBarMenu {
+    background-color: transparent;
+    border: none;
+    padding: 0;
+    font-family: "Inter", sans-serif;
+    font-weight: 500;
+    font-size: 9pt;
+}
+QMenuBar#titleBarMenu::item {
+    background: transparent;
+    padding: 6px 12px;
+    color: #7B857F;
+    border-radius: 4px;
+}
+QMenuBar#titleBarMenu::item:selected {
+    background-color: rgba(157, 78, 221, 35);
+    color: #C87FFF;
+}
+QMenuBar#titleBarMenu::item:pressed {
+    background-color: rgba(10, 193, 142, 35);
+    color: #0AC18E;
+}
+
+/* Window control buttons */
+QPushButton#titleBarMinButton,
+QPushButton#titleBarMaxButton,
+QPushButton#titleBarCloseButton {
+    background: transparent;
+    color: #7B857F;
+    border: none;
+    border-radius: 6px;
+    font-family: "Inter", sans-serif;
+    font-size: 12pt;
+    font-weight: 400;
+    padding: 0;
+    min-width: 40px;
+    min-height: 30px;
+}
+QPushButton#titleBarMinButton:hover,
+QPushButton#titleBarMaxButton:hover {
+    background-color: rgba(157, 78, 221, 40);
+    color: #E8ECEA;
+}
+QPushButton#titleBarMinButton:pressed,
+QPushButton#titleBarMaxButton:pressed {
+    background-color: rgba(157, 78, 221, 80);
+}
+QPushButton#titleBarCloseButton:hover {
+    background-color: rgba(232, 93, 107, 180);
+    color: #FFFFFF;
+}
+QPushButton#titleBarCloseButton:pressed {
+    background-color: #E85D6B;
+    color: #FFFFFF;
+}
+

@@ -615,7 +615,7 @@ void CoinControlDialog::updateLabels(WalletModel *model, QDialog *dialog) {
     }
 
     // turn label red when dust
-    l7->setStyleSheet((fDust) ? "color:red;" : "");
+    l7->setStyleSheet((fDust) ? "color:#E85D6B;" : "");
 
     // tool tips
     QString toolTipDust =
