@@ -37,6 +37,7 @@
 #ifdef Q_OS_WIN
 #include <windows.h>
 #include <windowsx.h>
+#include <mmsystem.h>
 #endif
 #ifdef ENABLE_WALLET
 #include <qt/walletcontroller.h>
@@ -55,8 +56,15 @@
 #include <QApplication>
 #include <QComboBox>
 #include <QDateTime>
+#include <QDir>
 #include <QDragEnterEvent>
+#include <QFileDialog>
+#include <QKeyEvent>
 #include <QListWidget>
+#include <QMouseEvent>
+#include <QProcess>
+#include <QRandomGenerator>
+#include <QStandardPaths>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
@@ -164,6 +172,9 @@ BitcoinGUI::BitcoinGUI(interfaces::Node &node, const Config *configIn,
     QFrame *frameBlocks = new QFrame();
     m_frameBlocks = frameBlocks;
     frameBlocks->setObjectName(QStringLiteral("networkStatusPanel"));
+    frameBlocks->setCursor(Qt::PointingHandCursor);
+    frameBlocks->setToolTip(tr("Double-click for full-screen block counter"));
+    frameBlocks->installEventFilter(this);
     frameBlocks->setContentsMargins(0, 0, 0, 0);
     frameBlocks->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
     QVBoxLayout *frameBlocksLayout = new QVBoxLayout(frameBlocks);
@@ -1223,8 +1234,22 @@ void BitcoinGUI::setNumBlocks(int count, const QDateTime &blockDate, const QStri
     progressBar->setToolTip(tooltip);
 
     if (m_lblBlocksText) {
-        m_lblBlocksText->setText(
-            QLocale::system().toString(qulonglong(count)));
+        const QString formatted =
+            QLocale::system().toString(qulonglong(count));
+        m_lblBlocksText->setText(formatted);
+        if (m_blockFullscreenLabel) {
+            m_blockFullscreenLabel->setText(formatted);
+        }
+        // Block-clock chime: play the system beep on a real +1 tip
+        // update when the user is watching the full-screen counter.
+        // Filter out IBD spam (headers-only, <99.9% verified) and the
+        // initial startup count.
+        if (!header && nVerificationProgress > 0.999 &&
+            m_lastBlockCount >= 0 && count > m_lastBlockCount &&
+            m_blockFullscreen && m_blockFullscreen->isVisible()) {
+            playRandomBlockSound();
+        }
+        m_lastBlockCount = count;
     }
 }
 
@@ -1392,7 +1417,189 @@ bool BitcoinGUI::eventFilter(QObject *object, QEvent *event) {
             return true;
         }
     }
+    // Double-click the network status panel → toggle the full-screen
+    // block-count view (a "watch the blocks tick" mode).
+    if (object == m_frameBlocks &&
+        event->type() == QEvent::MouseButtonDblClick) {
+        showBlockCountFullscreen();
+        return true;
+    }
+    // Close the fullscreen viewer on left-click or Escape; right-click
+    // opens the block-clock context menu (sounds toggle / folder / test).
+    if (object == m_blockFullscreen) {
+        if (event->type() == QEvent::MouseButtonPress) {
+            auto *me = static_cast<QMouseEvent *>(event);
+            if (me->button() == Qt::RightButton) {
+                showBlockClockContextMenu(me->globalPos());
+                return true;
+            }
+            m_blockFullscreen->hide();
+            return true;
+        }
+        if (event->type() == QEvent::KeyPress) {
+            auto *ke = static_cast<QKeyEvent *>(event);
+            if (ke->key() == Qt::Key_Escape ||
+                ke->key() == Qt::Key_Q ||
+                ke->key() == Qt::Key_F11) {
+                m_blockFullscreen->hide();
+                return true;
+            }
+        }
+    }
     return QMainWindow::eventFilter(object, event);
+}
+
+void BitcoinGUI::showBlockCountFullscreen() {
+    if (!m_blockFullscreen) {
+        m_blockFullscreen = new QWidget(nullptr);
+        m_blockFullscreen->setWindowFlags(Qt::Window | Qt::FramelessWindowHint);
+        m_blockFullscreen->setStyleSheet(
+            QStringLiteral("background: #000000;"));
+        m_blockFullscreen->setCursor(Qt::PointingHandCursor);
+        m_blockFullscreen->setAttribute(Qt::WA_DeleteOnClose, false);
+
+        auto *v = new QVBoxLayout(m_blockFullscreen);
+        v->setContentsMargins(0, 0, 0, 0);
+        v->addStretch(1);
+
+        m_blockFullscreenLabel =
+            new QLabel(m_lblBlocksText ? m_lblBlocksText->text() : QString(),
+                       m_blockFullscreen);
+        m_blockFullscreenLabel->setAlignment(Qt::AlignCenter);
+        // Compute font size from screen height so the number fills the
+        // viewport regardless of display resolution. QSS overrides
+        // setFont(), so specify font-* inside the widget stylesheet.
+        int fsPx = 260;
+        if (auto *scr = QApplication::primaryScreen()) {
+            fsPx = int(scr->geometry().height() * 0.32);
+        }
+        m_blockFullscreenLabel->setStyleSheet(QStringLiteral(
+            "QLabel { color: #0AC18E; background: transparent; "
+            "font-family: 'Orbitron','JetBrains Mono',monospace; "
+            "font-size: %1px; font-weight: 900; letter-spacing: 12px; }")
+                .arg(fsPx));
+        v->addWidget(m_blockFullscreenLabel, 0, Qt::AlignCenter);
+
+        auto *caption = new QLabel(tr("BLOCK"), m_blockFullscreen);
+        caption->setAlignment(Qt::AlignCenter);
+        caption->setStyleSheet(QStringLiteral(
+            "QLabel { color: #7B857F; background: transparent; "
+            "font-family: 'Rajdhani','Inter',sans-serif; "
+            "font-size: 32px; font-weight: 600; letter-spacing: 24px; }"));
+        v->addWidget(caption, 0, Qt::AlignCenter);
+
+        auto *hint = new QLabel(
+            tr("Esc or click to exit  ·  Right-click for sounds"),
+            m_blockFullscreen);
+        hint->setAlignment(Qt::AlignCenter);
+        hint->setStyleSheet(QStringLiteral(
+            "QLabel { color: #4A544F; background: transparent; "
+            "font-family: 'Rajdhani','Inter',sans-serif; "
+            "font-size: 14px; letter-spacing: 6px; }"));
+        v->addSpacing(40);
+        v->addWidget(hint, 0, Qt::AlignCenter);
+        v->addStretch(1);
+
+        // Click anywhere on the widget to close.
+        m_blockFullscreen->installEventFilter(this);
+    }
+    // Sync the label in case blocks arrived between opens.
+    if (m_blockFullscreenLabel && m_lblBlocksText) {
+        m_blockFullscreenLabel->setText(m_lblBlocksText->text());
+    }
+    m_blockFullscreen->showFullScreen();
+    m_blockFullscreen->raise();
+    m_blockFullscreen->activateWindow();
+    m_blockFullscreen->setFocus();
+}
+
+void BitcoinGUI::playRandomBlockSound() {
+    QSettings s;
+    if (!s.value("blockClock/soundsEnabled", false).toBool()) {
+        return;
+    }
+    const QString folder = s.value("blockClock/soundsFolder").toString();
+    if (folder.isEmpty()) {
+        QApplication::beep();
+        return;
+    }
+    QDir d(folder);
+    QStringList files = d.entryList({"*.wav", "*.WAV"}, QDir::Files);
+    if (files.isEmpty()) {
+        QApplication::beep();
+        return;
+    }
+    // Avoid playing the same file twice in a row when we have more than
+    // one to choose from.
+    if (files.size() > 1 && !m_lastBlockSoundFile.isEmpty()) {
+        files.removeAll(m_lastBlockSoundFile);
+    }
+    const QString picked =
+        files.at(QRandomGenerator::global()->bounded(files.size()));
+    m_lastBlockSoundFile = picked;
+    const QString path = d.absoluteFilePath(picked);
+#if defined(Q_OS_WIN)
+    // Windows: PlaySound with SND_ASYNC | SND_FILENAME. Path must be a
+    // wide-char null-terminated string.
+    PlaySoundW(reinterpret_cast<LPCWSTR>(path.utf16()), NULL,
+               SND_ASYNC | SND_FILENAME | SND_NODEFAULT);
+#elif defined(Q_OS_MAC)
+    QProcess::startDetached("/usr/bin/afplay", {path});
+#else
+    // Linux: try paplay (PulseAudio) then aplay (ALSA) as fallback.
+    if (!QProcess::startDetached("paplay", {path})) {
+        QProcess::startDetached("aplay", {"-q", path});
+    }
+#endif
+}
+
+void BitcoinGUI::showBlockClockContextMenu(const QPoint &globalPos) {
+    if (!m_blockFullscreen) return;
+    QSettings s;
+    const bool enabled = s.value("blockClock/soundsEnabled", false).toBool();
+    const QString folder = s.value("blockClock/soundsFolder").toString();
+
+    QMenu menu(m_blockFullscreen);
+    menu.setStyleSheet(QStringLiteral(
+        "QMenu { background: #17221D; color: #E8ECEA; "
+        "border: 1px solid rgba(157,78,221,90); padding: 6px; } "
+        "QMenu::item { padding: 8px 20px; } "
+        "QMenu::item:selected { background: rgba(10,193,142,40); }"));
+
+    QAction *actEnable = menu.addAction(tr("Enable block-found sounds"));
+    actEnable->setCheckable(true);
+    actEnable->setChecked(enabled);
+
+    QAction *actFolder = menu.addAction(
+        folder.isEmpty() ? tr("Choose sounds folder…")
+                         : tr("Sounds folder: %1").arg(QDir(folder).dirName()));
+
+    QAction *actTest = menu.addAction(tr("Test random sound"));
+    actTest->setEnabled(!folder.isEmpty());
+
+    QAction *chosen = menu.exec(globalPos);
+    if (!chosen) return;
+
+    if (chosen == actEnable) {
+        s.setValue("blockClock/soundsEnabled", actEnable->isChecked());
+    } else if (chosen == actFolder) {
+        const QString start = folder.isEmpty()
+            ? QStandardPaths::writableLocation(QStandardPaths::MusicLocation)
+            : folder;
+        const QString picked = QFileDialog::getExistingDirectory(
+            m_blockFullscreen, tr("Choose block sounds folder"), start);
+        if (!picked.isEmpty()) {
+            s.setValue("blockClock/soundsFolder", picked);
+            // Auto-enable when the user picks a folder for the first time.
+            if (!enabled) s.setValue("blockClock/soundsEnabled", true);
+        }
+    } else if (chosen == actTest) {
+        // Temporarily force-enable so playRandomBlockSound() plays.
+        const bool wasEnabled = enabled;
+        if (!wasEnabled) s.setValue("blockClock/soundsEnabled", true);
+        playRandomBlockSound();
+        if (!wasEnabled) s.setValue("blockClock/soundsEnabled", false);
+    }
 }
 
 #ifdef Q_OS_WIN

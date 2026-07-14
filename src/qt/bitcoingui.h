@@ -137,6 +137,22 @@ private:
     class CustomTitleBar *m_titleBar = nullptr;
     QFrame *m_frameBlocks = nullptr;
     bool m_networkStatusInstalled = false;
+    // Full-screen block-count viewer: double-click the cockpit panel to
+    // open, Esc/click anywhere to close. Owns nothing on first open;
+    // constructed lazily. m_lastBlockCount tracks the previous value so
+    // we only beep on a genuine +1 in fully-synced state.
+    QWidget *m_blockFullscreen = nullptr;
+    QLabel *m_blockFullscreenLabel = nullptr;
+    int m_lastBlockCount = -1;
+    QString m_lastBlockSoundFile;
+    void showBlockCountFullscreen();
+    // Play a random WAV from the user-chosen sounds folder (if any and
+    // if the block-clock sounds toggle is enabled). Uses platform-native
+    // audio playback — no QtMultimedia dependency.
+    void playRandomBlockSound();
+    // Context menu on the fullscreen widget: toggle sounds, pick a
+    // sounds folder, and test.
+    void showBlockClockContextMenu(const QPoint &globalPos);
     QAction *overviewAction = nullptr;
     QAction *historyAction = nullptr;
     QAction *quitAction = nullptr;

@@ -133,6 +133,8 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
 	list(APPEND QT_PLUGIN_PLATFORM_DEFINITIONS -DQT_QPA_PLATFORM_WINDOWS=1)
 
 	target_sources(bitcoin-qt-base PRIVATE winshutdownmonitor.cpp)
+	# PlaySound (block-clock random sound effects) lives in winmm.
+	target_link_libraries(bitcoin-qt-base winmm)
 endif()
 
 # OSX support
