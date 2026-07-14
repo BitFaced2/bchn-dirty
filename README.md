@@ -8,10 +8,24 @@ An unofficial UI mod of [Bitcoin Cash Node](https://bitcoincashnode.org/) v29.0.
 
 ## Download
 
-Grab `bchn_dirty.exe` from the [Releases page](https://github.com/BitFaced2/bchn-dirty/releases). Verify the SHA256 checksum listed in the release notes before running.
+From the [Releases page](https://github.com/BitFaced2/bchn-dirty/releases):
+
+| Platform | File |
+| --- | --- |
+| Windows x64 | `bchn_dirty.exe` |
+| Linux x64 | `bchn_dirty_linux_x64.tar.gz` |
+| macOS x64 | `bchn_dirty_mac.dmg` |
+
+Verify the SHA256 checksum listed in the release notes before running.
 
 ```powershell
+# Windows
 Get-FileHash bchn_dirty.exe -Algorithm SHA256
+```
+
+```
+# Linux / macOS
+sha256sum <file>
 ```
 
 ## What changed vs mainline BCHN
