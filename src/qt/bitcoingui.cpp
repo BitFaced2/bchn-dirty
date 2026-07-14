@@ -29,9 +29,18 @@
 #include <qt/optionsmodel.h>
 #include <qt/platformstyle.h>
 #include <qt/rpcconsole.h>
+#include <qt/titlebar.h>
 #include <qt/utilitydialog.h>
+
+#include <QGraphicsDropShadowEffect>
+
+#ifdef Q_OS_WIN
+#include <windows.h>
+#include <windowsx.h>
+#endif
 #ifdef ENABLE_WALLET
 #include <qt/walletcontroller.h>
+#include <qt/overviewpage.h>
 #include <qt/walletframe.h>
 #include <qt/walletmodel.h>
 #include <qt/walletview.h>
@@ -82,6 +91,7 @@ BitcoinGUI::BitcoinGUI(interfaces::Node &node, const Config *configIn,
     : QMainWindow(parent), m_node(node), trayIconMenu{new QMenu()},
       config(configIn), platformStyle(_platformStyle),
       m_network_style(networkStyle) {
+    setWindowFlags(Qt::Window | Qt::FramelessWindowHint);
     QSettings settings;
     if (!restoreGeometry(settings.value("MainWindowGeometry").toByteArray())) {
         // Restore failed (perhaps missing setting), center the window
@@ -124,6 +134,15 @@ BitcoinGUI::BitcoinGUI(interfaces::Node &node, const Config *configIn,
     // Create application menu bar
     createMenuBar();
 
+    // Wrap the native menu bar in our custom frameless-window title bar and
+    // install it as the QMainWindow menu widget.
+#ifndef Q_OS_MAC
+    m_titleBar = new CustomTitleBar(this, appMenuBar,
+                                    m_network_style->getTrayAndWindowIcon(),
+                                    windowTitle(), this);
+    setMenuWidget(m_titleBar);
+#endif
+
     // Create the toolbars
     createToolBars();
 
@@ -137,35 +156,109 @@ BitcoinGUI::BitcoinGUI(interfaces::Node &node, const Config *configIn,
     // Create status bar
     statusBar();
 
-    // Disable size grip because it looks ugly and nobody needs it
-    statusBar()->setSizeGripEnabled(false);
+    // Frameless window has no native resize edges; enable size grip so the
+    // user can still resize from the bottom-right corner.
+    statusBar()->setSizeGripEnabled(true);
 
     // Status bar notification icons
     QFrame *frameBlocks = new QFrame();
+    m_frameBlocks = frameBlocks;
+    frameBlocks->setObjectName(QStringLiteral("networkStatusPanel"));
     frameBlocks->setContentsMargins(0, 0, 0, 0);
-    frameBlocks->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
-    QHBoxLayout *frameBlocksLayout = new QHBoxLayout(frameBlocks);
-    frameBlocksLayout->setContentsMargins(3, 0, 3, 0);
-    frameBlocksLayout->setSpacing(3);
+    frameBlocks->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
+    QVBoxLayout *frameBlocksLayout = new QVBoxLayout(frameBlocks);
+    frameBlocksLayout->setContentsMargins(14, 10, 14, 12);
+    frameBlocksLayout->setSpacing(6);
     unitDisplayControl = new UnitDisplayStatusBarControl(platformStyle);
     labelWalletEncryptionIcon = new QLabel();
     labelWalletHDStatusIcon = new QLabel();
     labelProxyIcon = new GUIUtil::ClickableLabel();
     connectionsControl = new GUIUtil::ClickableLabel();
     labelBlocksIcon = new GUIUtil::ClickableLabel();
+
+    auto makeCockpitLabel = [](const QString &initial) {
+        auto *l = new QLabel(initial);
+        QFont f(QStringLiteral("JetBrains Mono"));
+        f.setPointSize(10);
+        f.setWeight(QFont::Medium);
+        l->setFont(f);
+        l->setStyleSheet(QStringLiteral(
+            "QLabel { color: #E8ECEA; background: transparent; }"));
+        return l;
+    };
+    auto makeCockpitSep = [] {
+        auto *sep = new QFrame();
+        sep->setObjectName(QStringLiteral("cockpitSep"));
+        sep->setFrameShape(QFrame::VLine);
+        sep->setFixedWidth(1);
+        sep->setStyleSheet(QStringLiteral(
+            "QFrame { color: rgba(157, 78, 221, 60); background: rgba(157, 78, 221, 60); }"));
+        return sep;
+    };
+
+    m_lblWalletText = makeCockpitLabel(tr("Wallet"));
+    m_lblPeersText  = makeCockpitLabel(tr("0 peers"));
+    m_lblBlocksText = makeCockpitLabel(tr("—"));
+
+    // Top: centered horizontal chips row — unit, wallet, peers.
+    auto *chipsRow = new QHBoxLayout();
+    chipsRow->setSpacing(10);
+    chipsRow->setContentsMargins(0, 0, 0, 0);
+    chipsRow->addStretch(1);
     if (enableWallet) {
-        frameBlocksLayout->addStretch();
-        frameBlocksLayout->addWidget(unitDisplayControl);
-        frameBlocksLayout->addStretch();
-        frameBlocksLayout->addWidget(labelWalletEncryptionIcon);
-        frameBlocksLayout->addWidget(labelWalletHDStatusIcon);
+        chipsRow->addWidget(unitDisplayControl);
+        chipsRow->addWidget(makeCockpitSep());
+        chipsRow->addWidget(labelWalletEncryptionIcon);
+        chipsRow->addWidget(labelWalletHDStatusIcon);
+        chipsRow->addWidget(m_lblWalletText);
+        chipsRow->addWidget(makeCockpitSep());
     }
-    frameBlocksLayout->addWidget(labelProxyIcon);
-    frameBlocksLayout->addStretch();
-    frameBlocksLayout->addWidget(connectionsControl);
-    frameBlocksLayout->addStretch();
-    frameBlocksLayout->addWidget(labelBlocksIcon);
-    frameBlocksLayout->addStretch();
+    if (labelProxyIcon) {
+        chipsRow->addWidget(labelProxyIcon);
+    }
+    chipsRow->addWidget(connectionsControl);
+    chipsRow->addWidget(m_lblPeersText);
+    chipsRow->addStretch(1);
+    frameBlocksLayout->addLayout(chipsRow);
+    // Vertical centering: block group sits between two equal stretches so
+    // the huge number lands in the middle of the card, chips stay pinned
+    // to the top.
+    frameBlocksLayout->addStretch(1);
+
+    // Middle: huge Orbitron block number (no "Block" prefix, no
+    // sync-status checkmark — those live elsewhere or are implied).
+    labelBlocksIcon->hide();
+    m_lblBlocksText->setObjectName(QStringLiteral("cockpitBlockNumber"));
+    QFont blockFont(QStringLiteral("Orbitron"));
+    blockFont.setPointSize(64);
+    blockFont.setWeight(QFont::Black);
+    m_lblBlocksText->setFont(blockFont);
+    m_lblBlocksText->setStyleSheet(QStringLiteral(
+        "QLabel { color: #0AC18E; background: transparent; letter-spacing: 3px; }"));
+    m_lblBlocksText->setAlignment(Qt::AlignHCenter);
+    auto *blockRow = new QHBoxLayout();
+    blockRow->setSpacing(8);
+    blockRow->setContentsMargins(0, 0, 0, 0);
+    blockRow->addStretch(1);
+    blockRow->addWidget(m_lblBlocksText);
+    blockRow->addStretch(1);
+    frameBlocksLayout->addLayout(blockRow);
+
+    // Bottom: "BLOCK" caption sits under the number.
+    auto *blockCaption = new QLabel(tr("BLOCK"));
+    {
+        QFont cf(QStringLiteral("Rajdhani"));
+        cf.setPointSize(9);
+        cf.setWeight(QFont::DemiBold);
+        cf.setCapitalization(QFont::AllUppercase);
+        cf.setLetterSpacing(QFont::AbsoluteSpacing, 4.0);
+        blockCaption->setFont(cf);
+        blockCaption->setStyleSheet(QStringLiteral(
+            "QLabel { color: #7B857F; background: transparent; }"));
+        blockCaption->setAlignment(Qt::AlignHCenter);
+    }
+    frameBlocksLayout->addWidget(blockCaption);
+    frameBlocksLayout->addStretch(1);
 
     // Progress bar and label for blocks download
     progressBarLabel = new QLabel();
@@ -568,11 +661,11 @@ void BitcoinGUI::createToolBars() {
         toolbar->setContextMenuPolicy(Qt::PreventContextMenu);
         toolbar->setMovable(false);
         toolbar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-        toolbar->addAction(overviewAction);
-        toolbar->addAction(sendCoinsAction);
-        toolbar->addAction(receiveCoinsAction);
-        toolbar->addAction(historyAction);
+        // Single-page dashboard: no tab bar. The Send / Receive / History
+        // sections live inside the Overview page. Actions are still kept
+        // alive for tray/menu access and keyboard shortcuts.
         overviewAction->setChecked(true);
+        toolbar->hide();
 
 #ifdef ENABLE_WALLET
         QWidget *spacer = new QWidget();
@@ -701,6 +794,21 @@ void BitcoinGUI::addWallet(WalletModel *walletModel) {
     if (m_wallet_selector->count() == 2) {
         m_wallet_selector_label_action->setVisible(true);
         m_wallet_selector_action->setVisible(true);
+        if (appToolBar) appToolBar->show();
+    }
+
+    // Move the network/status panel out of the bottom status bar and into
+    // the top-right of the first wallet's Balances card. Done once per app
+    // lifetime — the widget is a singleton and belongs to whichever card
+    // installs it.
+    if (!m_networkStatusInstalled && m_frameBlocks) {
+        if (auto *wv = walletFrame->currentWalletView()) {
+            if (auto *op = wv->getOverviewPage()) {
+                op->installNetworkStatusWidget(m_frameBlocks);
+                statusBar()->hide();
+                m_networkStatusInstalled = true;
+            }
+        }
     }
 }
 
@@ -715,6 +823,7 @@ void BitcoinGUI::removeWallet(WalletModel *walletModel) {
     } else if (m_wallet_selector->count() == 1) {
         m_wallet_selector_label_action->setVisible(false);
         m_wallet_selector_action->setVisible(false);
+        if (appToolBar) appToolBar->hide();
     }
     rpcConsole->removeWallet(walletModel);
     walletFrame->removeWallet(walletModel);
@@ -962,6 +1071,13 @@ void BitcoinGUI::updateNetworkState() {
 
     connectionsControl->setPixmap(platformStyle->SingleColorIcon(icon).pixmap(
         STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE));
+
+    if (m_lblPeersText) {
+        m_lblPeersText->setText(
+            m_node.getNetworkActive()
+                ? tr("%n peer(s)", "", count)
+                : tr("Offline"));
+    }
 }
 
 void BitcoinGUI::setNumConnections(int count) {
@@ -1054,7 +1170,7 @@ void BitcoinGUI::setNumBlocks(int count, const QDateTime &blockDate, const QStri
         tooltip = tr("Up to date") + QString(".<br>") + tooltip;
         labelBlocksIcon->setPixmap(
             platformStyle->SingleColorIcon(":/icons/synced")
-                .pixmap(STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE));
+                .pixmap(STATUSBAR_ICONSIZE * 2, STATUSBAR_ICONSIZE * 2));
 
 #ifdef ENABLE_WALLET
         if (walletFrame) {
@@ -1080,7 +1196,7 @@ void BitcoinGUI::setNumBlocks(int count, const QDateTime &blockDate, const QStri
                 platformStyle
                     ->SingleColorIcon(QString(":/movies/spinner-%1")
                                           .arg(spinnerFrame, 3, 10, QChar('0')))
-                    .pixmap(STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE));
+                    .pixmap(STATUSBAR_ICONSIZE * 2, STATUSBAR_ICONSIZE * 2));
             spinnerFrame = (spinnerFrame + 1) % SPINNER_FRAMES;
         }
         prevBlocks = count;
@@ -1105,6 +1221,11 @@ void BitcoinGUI::setNumBlocks(int count, const QDateTime &blockDate, const QStri
     labelBlocksIcon->setToolTip(tooltip);
     progressBarLabel->setToolTip(tooltip);
     progressBar->setToolTip(tooltip);
+
+    if (m_lblBlocksText) {
+        m_lblBlocksText->setText(
+            QLocale::system().toString(qulonglong(count)));
+    }
 }
 
 void BitcoinGUI::message(const QString &title, const QString &message,
@@ -1274,6 +1395,35 @@ bool BitcoinGUI::eventFilter(QObject *object, QEvent *event) {
     return QMainWindow::eventFilter(object, event);
 }
 
+#ifdef Q_OS_WIN
+bool BitcoinGUI::nativeEvent(const QByteArray &eventType, void *message,
+                             long *result) {
+    if (eventType == "windows_generic_MSG") {
+        MSG *msg = static_cast<MSG *>(message);
+        if (msg->message == WM_NCHITTEST && !isMaximized() && !isFullScreen()) {
+            RECT winRect;
+            GetWindowRect(reinterpret_cast<HWND>(winId()), &winRect);
+            LONG x = GET_X_LPARAM(msg->lParam);
+            LONG y = GET_Y_LPARAM(msg->lParam);
+            const int margin = int(6 * devicePixelRatioF());
+            const bool left  = x >= winRect.left && x < winRect.left + margin;
+            const bool right = x >= winRect.right - margin && x < winRect.right;
+            const bool top   = y >= winRect.top && y < winRect.top + margin;
+            const bool bot   = y >= winRect.bottom - margin && y < winRect.bottom;
+            if (top && left)   { *result = HTTOPLEFT;    return true; }
+            if (top && right)  { *result = HTTOPRIGHT;   return true; }
+            if (bot && left)   { *result = HTBOTTOMLEFT; return true; }
+            if (bot && right)  { *result = HTBOTTOMRIGHT;return true; }
+            if (left)          { *result = HTLEFT;       return true; }
+            if (right)         { *result = HTRIGHT;      return true; }
+            if (top)           { *result = HTTOP;        return true; }
+            if (bot)           { *result = HTBOTTOM;     return true; }
+        }
+    }
+    return QMainWindow::nativeEvent(eventType, message, result);
+}
+#endif
+
 #ifdef ENABLE_WALLET
 bool BitcoinGUI::handlePaymentRequest(const SendCoinsRecipient &recipient) {
     // URI has to be valid
@@ -1345,6 +1495,18 @@ void BitcoinGUI::updateWalletStatus() {
     WalletModel *const walletModel = walletView->getWalletModel();
     setEncryptionStatus(walletModel->getEncryptionStatus());
     setHDStatus(walletModel->wallet().hdEnabled());
+    if (m_lblWalletText) {
+        QString label;
+        switch (walletModel->getEncryptionStatus()) {
+            case WalletModel::Unencrypted: label = tr("Unencrypted"); break;
+            case WalletModel::Unlocked:    label = tr("Unlocked");    break;
+            case WalletModel::Locked:      label = tr("Locked");      break;
+        }
+        if (walletModel->wallet().hdEnabled()) {
+            label += QStringLiteral(" \u00B7 HD");
+        }
+        m_lblWalletText->setText(label);
+    }
 }
 #endif // ENABLE_WALLET
 
@@ -1383,6 +1545,9 @@ void BitcoinGUI::updateWindowTitle() {
     }
 #endif
     setWindowTitle(window_title);
+    if (m_titleBar) {
+        m_titleBar->setTitle(window_title);
+    }
 }
 
 void BitcoinGUI::showNormalIfMinimized(bool fToggleHidden) {

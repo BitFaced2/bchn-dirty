@@ -45,6 +45,7 @@ class Node;
 QT_BEGIN_NAMESPACE
 class QAction;
 class QComboBox;
+class QFrame;
 class QMenu;
 class QProgressBar;
 class QProgressDialog;
@@ -105,6 +106,10 @@ protected:
     void dragEnterEvent(QDragEnterEvent *event) override;
     void dropEvent(QDropEvent *event) override;
     bool eventFilter(QObject *object, QEvent *event) override;
+#ifdef Q_OS_WIN
+    bool nativeEvent(const QByteArray &eventType, void *message,
+                     long *result) override;
+#endif
 
 private:
     interfaces::Node &m_node;
@@ -120,12 +125,18 @@ private:
     GUIUtil::ClickableLabel *labelProxyIcon = nullptr;
     GUIUtil::ClickableLabel *connectionsControl = nullptr;
     GUIUtil::ClickableLabel *labelBlocksIcon = nullptr;
+    QLabel *m_lblPeersText = nullptr;
+    QLabel *m_lblBlocksText = nullptr;
+    QLabel *m_lblWalletText = nullptr;
     QLabel *progressBarLabel = nullptr;
     GUIUtil::ClickableProgressBar *progressBar = nullptr;
     QProgressDialog *progressDialog = nullptr;
 
     QMenuBar *appMenuBar = nullptr;
     QToolBar *appToolBar = nullptr;
+    class CustomTitleBar *m_titleBar = nullptr;
+    QFrame *m_frameBlocks = nullptr;
+    bool m_networkStatusInstalled = false;
     QAction *overviewAction = nullptr;
     QAction *historyAction = nullptr;
     QAction *quitAction = nullptr;

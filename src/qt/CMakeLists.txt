@@ -101,6 +101,7 @@ add_library(bitcoin-qt-base
 	qvaluecombobox.cpp
 	rpcconsole.cpp
 	splashscreen.cpp
+	titlebar.cpp
 	trafficgraphwidget.cpp
 	utilitydialog.cpp
 
