@@ -15,7 +15,7 @@ project(bitcoin-cash-node
 )
 
 # Package information
-set(PACKAGE_NAME "Bitcoin Cash Node")
+set(PACKAGE_NAME "BCHN Dirty")
 
 # Copyright
 set(COPYRIGHT_YEAR 2025)
