@@ -221,12 +221,12 @@ QAbstractSpinBox {
     color: #E8ECEA;
     border: 1px solid #1F2A24;
     border-radius: 8px;
-    padding: 8px 12px;
+    padding: 0 14px;
     selection-background-color: rgba(157, 78, 221, 120);
     selection-color: #E8ECEA;
     font-family: "JetBrains Mono", "Consolas", "Courier New", monospace;
-    font-size: 10pt;
-    min-height: 22px;
+    font-size: 13pt;
+    font-weight: 600;
 }
 QAbstractSpinBox:focus {
     border-color: #0AC18E;
