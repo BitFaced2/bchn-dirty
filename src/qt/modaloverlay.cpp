@@ -23,6 +23,32 @@ ModalOverlay::ModalOverlay(QWidget *parent)
         raise();
     }
 
+    // Compact toast-style overlay: skip the full-window dim, tuck the
+    // sync card into the top-right corner, and let mouse events pass
+    // through the empty areas so the dashboard stays interactive
+    // during a resync.
+    setAttribute(Qt::WA_TransparentForMouseEvents, true);
+    ui->bgWidget->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+    ui->bgWidget->setStyleSheet(
+        QStringLiteral("#bgWidget { background: transparent; }"));
+    if (auto *l = qobject_cast<QVBoxLayout *>(ui->bgWidget->layout())) {
+        l->setContentsMargins(0, 12, 12, 0);
+        l->setAlignment(ui->contentWidget, Qt::AlignTop | Qt::AlignRight);
+    }
+    ui->contentWidget->setStyleSheet(QStringLiteral(
+        "#contentWidget { background: rgba(23,34,29,240); "
+        "border: 1px solid rgba(157,78,221,90); border-radius: 12px; "
+        "padding: 8px; } "
+        "QLabel { color: #E8ECEA; background: transparent; "
+        "font-family: 'Rajdhani','Inter',sans-serif; font-size: 10pt; }"));
+    ui->contentWidget->setFixedWidth(420);
+
+    // Kill the noisy warning icon + long info paragraphs; the compact
+    // card only needs the live sync stats and a Hide button.
+    ui->warningIcon->hide();
+    ui->infoText->hide();
+    ui->infoTextStrong->hide();
+
     blockProcessTime.clear();
     setVisible(false);
 }
