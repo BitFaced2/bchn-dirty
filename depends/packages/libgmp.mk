@@ -6,6 +6,7 @@ $(package)_sha256_hash=a3c2b80201b89e68616f4ad30bc66aee4927c3ce50e33929ca819d5c4
 
 define $(package)_set_vars
 $(package)_config_opts=--enable-cxx --disable-assembly --disable-shared --enable-static --with-pic
+$(package)_config_opts+= CC_FOR_BUILD=gcc CPP_FOR_BUILD="gcc -E"
 endef
 
 define $(package)_config_cmds
