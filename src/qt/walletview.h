@@ -62,6 +62,8 @@ public:
 
     void showOutOfSyncWarning(bool fShow);
 
+    OverviewPage *getOverviewPage() const { return overviewPage; }
+
     void transactionDoubleSpent(const TxId txId, const DspId dsp);
 
 private:

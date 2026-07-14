@@ -40,27 +40,26 @@ WalletView::WalletView(const PlatformStyle *_platformStyle,
                        WalletModel *_walletModel, QWidget *parent)
     : QStackedWidget(parent), clientModel(nullptr), walletModel(_walletModel),
       platformStyle(_platformStyle) {
-    // Create tabs
-    overviewPage = new OverviewPage(platformStyle);
-
-    transactionsPage = new QWidget(this);
-    QVBoxLayout *vbox = new QVBoxLayout();
-    QHBoxLayout *hbox_buttons = new QHBoxLayout();
+    // Create the child pages first so we can hand them to the OverviewPage
+    // to be embedded as sections of the unified dashboard.
     transactionView = new TransactionView(platformStyle, this);
-    vbox->addWidget(transactionView);
+    receiveCoinsPage = new ReceiveCoinsDialog(platformStyle);
+    sendCoinsPage = new SendCoinsDialog(platformStyle, walletModel);
+
     QPushButton *exportButton = new QPushButton(tr("&Export"), this);
     exportButton->setToolTip(
         tr("Export the data in the current tab to a file"));
     if (platformStyle->getImagesOnButtons()) {
         exportButton->setIcon(platformStyle->SingleColorIcon(":/icons/export"));
     }
-    hbox_buttons->addStretch();
-    hbox_buttons->addWidget(exportButton);
-    vbox->addLayout(hbox_buttons);
-    transactionsPage->setLayout(vbox);
 
-    receiveCoinsPage = new ReceiveCoinsDialog(platformStyle);
-    sendCoinsPage = new SendCoinsDialog(platformStyle, walletModel);
+    overviewPage = new OverviewPage(platformStyle);
+    overviewPage->embedSubWidgets(sendCoinsPage, receiveCoinsPage,
+                                  transactionView, exportButton);
+
+    // Kept for compatibility with existing goto*Page() slots — they all now
+    // route to the single overview dashboard.
+    transactionsPage = overviewPage;
 
     usedSendingAddressesPage =
         new AddressBookPage(platformStyle, AddressBookPage::ForEditing,
@@ -70,9 +69,6 @@ WalletView::WalletView(const PlatformStyle *_platformStyle,
                             AddressBookPage::ReceivingTab, this);
 
     addWidget(overviewPage);
-    addWidget(transactionsPage);
-    addWidget(receiveCoinsPage);
-    addWidget(sendCoinsPage);
 
     // Clicking on a transaction on the overview pre-selects the transaction on
     // the transaction history page
@@ -251,16 +247,15 @@ void WalletView::gotoOverviewPage() {
 }
 
 void WalletView::gotoHistoryPage() {
-    setCurrentWidget(transactionsPage);
+    setCurrentWidget(overviewPage);
 }
 
 void WalletView::gotoReceiveCoinsPage() {
-    setCurrentWidget(receiveCoinsPage);
+    setCurrentWidget(overviewPage);
 }
 
 void WalletView::gotoSendCoinsPage(QString addr) {
-    setCurrentWidget(sendCoinsPage);
-
+    setCurrentWidget(overviewPage);
     if (!addr.isEmpty()) {
         sendCoinsPage->setAddress(addr);
     }

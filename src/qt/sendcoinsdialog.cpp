@@ -347,7 +347,7 @@ void SendCoinsDialog::on_sendButton_clicked() {
 
         // append transaction fee value
         questionString.append(
-            "<span style='color:#aa0000; font-weight:bold;'>");
+            "<span style='color:#E85D6B; font-weight:bold;'>");
         questionString.append(BitcoinUnits::formatHtmlWithUnit(
             model->getOptionsModel()->getDisplayUnit(), txFee));
         questionString.append("</span><br />");
@@ -817,7 +817,7 @@ void SendCoinsDialog::coinControlChangeEdited(const QString &text) {
     if (model && model->getAddressTableModel()) {
         // Default to no change address until verified
         CoinControlDialog::coinControl()->destChange = CNoDestination();
-        ui->labelCoinControlChangeLabel->setStyleSheet("QLabel{color:red;}");
+        ui->labelCoinControlChangeLabel->setStyleSheet("QLabel{color:#E85D6B;}");
 
         const CTxDestination dest =
             DecodeDestination(text.toStdString(), model->getChainParams());
