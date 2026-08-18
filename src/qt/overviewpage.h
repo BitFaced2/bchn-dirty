@@ -76,6 +76,16 @@ private:
     QLabel *m_receiveQrLabel = nullptr;
     QLabel *m_receiveAddressLabel = nullptr;
 
+    // Qube-aware balances: while the qubes-watch wallet is active, a 2s poll
+    // of the local qubed splits the watch balance into what the Qube can
+    // spend (operating) and what its covenant locks (bonded reserve). -1 =
+    // qubed silent → the stock Spendable/Watch-only display.
+    QLabel *m_colChipSpendable = nullptr;
+    QLabel *m_colChipWatch = nullptr;
+    class QTimer *m_qubeTimer = nullptr;
+    qint64 m_qubeOperating = -1;
+    qint64 m_qubeReserve = -1;
+
 private Q_SLOTS:
     void updateDisplayUnit();
     void handleTransactionClicked(const QModelIndex &index);
@@ -83,4 +93,5 @@ private Q_SLOTS:
     void updateWatchOnlyLabels(bool showWatchOnly);
     void handleOutOfSyncWarningClicks();
     void refreshReceiveAddress();
+    void pollQubeBalances();
 };

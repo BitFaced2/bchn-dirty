@@ -37,9 +37,12 @@
 #include <QComboBox>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSpinBox>
+#include <QTcpSocket>
 #include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -1046,12 +1049,12 @@ void OverviewPage::embedSubWidgets(SendCoinsDialog *send,
                                     cell.rowSpan, cell.colSpan);
         }
     }
-    ui->gridLayout->addWidget(
-        makeColChip(tr("Spendable"), QColor(0x0A, 0xC1, 0x8E), ui->frame),
-        0, 1, 1, 1);
-    ui->gridLayout->addWidget(
-        makeColChip(tr("Watch-only"), QColor(0x9D, 0x4E, 0xDD), ui->frame),
-        0, 2, 1, 1);
+    m_colChipSpendable =
+        makeColChip(tr("Spendable"), QColor(0x0A, 0xC1, 0x8E), ui->frame);
+    m_colChipWatch =
+        makeColChip(tr("Watch-only"), QColor(0x9D, 0x4E, 0xDD), ui->frame);
+    ui->gridLayout->addWidget(m_colChipSpendable, 0, 1, 1, 1);
+    ui->gridLayout->addWidget(m_colChipWatch, 0, 2, 1, 1);
     // Wrap the balance card's contents with a big BCH logo on the left.
     // Drain verticalLayout_4 into savedItems, swap ui->frame's layout to a
     // QHBoxLayout, then rehang the drained items in a QVBox on the right.
@@ -1150,6 +1153,35 @@ void OverviewPage::setBalance(const interfaces::WalletBalances &balances) {
     ui->labelImmature->setVisible(false);
     ui->labelImmatureText->setVisible(false);
     ui->labelWatchImmature->setVisible(false);
+
+    // Qube mode: the watch balance is really two different kinds of money —
+    // the operating funds the Qube spends with its own key, and the bonded
+    // reserve locked in its covenant (retrievable only at melt). While qubed
+    // answers, render them as their own columns; when it's silent, the stock
+    // Spendable/Watch-only display above stands.
+    const bool qubeMode = walletModel &&
+        walletModel->getWalletName() == QStringLiteral("qubes-watch") &&
+        m_qubeOperating >= 0;
+    if (m_colChipSpendable && m_colChipWatch) {
+        m_colChipSpendable->setText(qubeMode ? tr("Operating") : tr("Spendable"));
+        m_colChipWatch->setText(qubeMode ? tr("Bonded reserve") : tr("Watch-only"));
+    }
+    if (qubeMode) {
+        const Amount operating = int64_t(m_qubeOperating) * SATOSHI;
+        const Amount reserve = int64_t(m_qubeReserve) * SATOSHI;
+        ui->labelBalance->setText(BitcoinUnits::formatWithUnit(
+            unit, operating, false, BitcoinUnits::separatorAlways));
+        ui->labelTotal->setText(BitcoinUnits::formatWithUnit(
+            unit, operating, false, BitcoinUnits::separatorAlways));
+        ui->labelWatchAvailable->setText(BitcoinUnits::formatWithUnit(
+            unit, reserve, false, BitcoinUnits::separatorAlways));
+        ui->labelWatchTotal->setText(BitcoinUnits::formatWithUnit(
+            unit, reserve, false, BitcoinUnits::separatorAlways));
+        ui->lineWatchBalance->setVisible(true);
+        ui->labelWatchAvailable->setVisible(true);
+        ui->labelWatchPending->setVisible(true);
+        ui->labelWatchTotal->setVisible(true);
+    }
 }
 
 // show/hide watch-only labels
@@ -1203,8 +1235,78 @@ void OverviewPage::setWalletModel(WalletModel *model) {
                 &OverviewPage::updateWatchOnlyLabels);
     }
 
+    // Qube-aware balances: while qubes-watch is the active wallet, poll the
+    // local qubed for the operating / bonded-reserve split.
+    const bool qubeWallet =
+        model && model->getWalletName() == QStringLiteral("qubes-watch");
+    if (qubeWallet && !m_qubeTimer) {
+        m_qubeTimer = new QTimer(this);
+        m_qubeTimer->setInterval(2000);
+        connect(m_qubeTimer, &QTimer::timeout, this,
+                &OverviewPage::pollQubeBalances);
+        m_qubeTimer->start();
+        pollQubeBalances();
+    } else if (!qubeWallet && m_qubeTimer) {
+        m_qubeTimer->stop();
+        m_qubeOperating = -1;
+        m_qubeReserve = -1;
+    }
+
     // update the display unit, to not use the default ("BCH")
     updateDisplayUnit();
+}
+
+// Poll the local qubed for the operating / bonded-reserve split. Raw
+// QTcpSocket, not QNAM — see BitcoinGUI::pollQubeMemory for why. A dead or
+// locked qubed resets the split to unknown, and the stock Spendable/Watch-only
+// display returns on the next repaint.
+void OverviewPage::pollQubeBalances() {
+    auto *sock = new QTcpSocket(this);
+    auto *deadline = new QTimer(sock);
+    deadline->setSingleShot(true);
+
+    auto applySplit = [this](qint64 op, qint64 res) {
+        const bool changed = (op != m_qubeOperating || res != m_qubeReserve);
+        m_qubeOperating = op;
+        m_qubeReserve = res;
+        if (changed && walletModel && m_balances.balance != -SATOSHI) {
+            setBalance(m_balances);
+        }
+    };
+
+    connect(sock, &QTcpSocket::connected, this, [sock]() {
+        sock->write("GET /v1/blockclock HTTP/1.0\r\n"
+                    "Host: 127.0.0.1\r\n"
+                    "Connection: close\r\n\r\n");
+    });
+    connect(sock, &QTcpSocket::disconnected, this, [sock, applySplit]() {
+        const QByteArray resp = sock->readAll();
+        const int sep = resp.indexOf("\r\n\r\n");
+        qint64 op = -1;
+        qint64 res = -1;
+        if (sep >= 0) {
+            const QJsonObject obj =
+                QJsonDocument::fromJson(resp.mid(sep + 4)).object();
+            if (obj.value(QStringLiteral("state")).toString() ==
+                    QStringLiteral("alive") &&
+                obj.contains(QStringLiteral("operatingSats"))) {
+                op = static_cast<qint64>(
+                    obj.value(QStringLiteral("operatingSats")).toDouble());
+                res = static_cast<qint64>(
+                    obj.value(QStringLiteral("reserveSats")).toDouble());
+            }
+        }
+        applySplit(op, res);
+        sock->deleteLater();
+    });
+    connect(deadline, &QTimer::timeout, this, [sock, applySplit]() {
+        applySplit(-1, -1); // qubed not answering
+        sock->abort();
+        sock->deleteLater();
+    });
+
+    sock->connectToHost(QStringLiteral("127.0.0.1"), 8787);
+    deadline->start(1500);
 }
 
 void OverviewPage::updateDisplayUnit() {
