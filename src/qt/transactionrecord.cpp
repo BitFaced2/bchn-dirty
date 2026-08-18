@@ -12,7 +12,9 @@
 #include <consensus/consensus.h>
 #include <interfaces/wallet.h>
 #include <key_io.h>
+#include <script/script.h>
 #include <timedata.h>
+#include <tinyformat.h>
 #include <validation.h>
 
 #include <QDateTime>
@@ -153,6 +155,65 @@ TransactionRecord::decomposeTransaction(const interfaces::WalletTx &wtx) {
         }
     }
     parts.last().dsProof = wtx.dsProof;
+
+    // ── Qube-aware tagging (BCHN Dirty) ─────────────────────────────────────
+    // Recognize Qube protocol transactions by their on-chain shape so the
+    // qubes-watch wallet's list reads as a life story instead of "(n/a)":
+    // genesis and tombstone announce themselves in OP_RETURN; anchors and
+    // level-ups re-emit the covenant (P2SH32 + mutable NFT, level in byte 57
+    // of the 59-byte commitment); tidies and the melt's reserve reclaim are
+    // pure self-sends. The tag rides on every part; the table model only
+    // DISPLAYS it while the qubes-watch wallet is active.
+    {
+        std::string opret;
+        bool covenantOut = false;
+        uint8_t covenantLevel = 0;
+        for (const CTxOut &txout : wtx.tx->vout) {
+            const CScript &s = txout.scriptPubKey;
+            if (s.size() > 2 && s[0] == OP_RETURN) {
+                size_t off = 0, len = 0;
+                const uint8_t push = s[1];
+                if (push >= 1 && push <= 75) {
+                    len = push;
+                    off = 2;
+                } else if (push == OP_PUSHDATA1 && s.size() > 3) {
+                    len = s[2];
+                    off = 3;
+                }
+                if (len > 0 && off + len <= s.size()) {
+                    opret.assign(s.begin() + off, s.begin() + off + len);
+                }
+            }
+            if (txout.tokenDataPtr && s.size() == 35 && s[0] == OP_HASH256 &&
+                s[34] == OP_EQUAL) {
+                covenantOut = true;
+                const auto &c = txout.tokenDataPtr->GetCommitment();
+                if (c.size() == 59) {
+                    covenantLevel = c[57];
+                }
+            }
+        }
+        std::string tag;
+        if (opret.rfind("QUBE GENESIS", 0) == 0) {
+            tag = "⬢ Qube genesis · first words";
+        } else if (opret.rfind("QUBE TOMBSTONE", 0) == 0) {
+            tag = "🪦 Qube tombstone · last words";
+        } else if (covenantOut) {
+            tag = strprintf("⛓ Qube covenant · anchor / level-up (L%d)",
+                            covenantLevel);
+        } else if (!parts.isEmpty() &&
+                   parts.last().type == TransactionRecord::SendToSelf) {
+            tag = !opret.empty() ? "⛓ Qube post to chain"
+                                 : "♻ Qube tidy / reserve reclaim";
+        } else if (!opret.empty() && nNet < Amount::zero()) {
+            tag = "⛓ Qube post to chain";
+        }
+        if (!tag.empty()) {
+            for (auto &p : parts) {
+                p.qubeTag = tag;
+            }
+        }
+    }
 
     return parts;
 }

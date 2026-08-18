@@ -134,6 +134,11 @@ public:
     Amount debit;
     Amount credit;
     DoubleSpendProof dsProof;
+    /** BCHN Dirty: Qube-protocol tag decoded from the transaction's shape
+     * (QUBE OP_RETURN prefixes, covenant P2SH32 + mutable-NFT outputs).
+     * Empty for ordinary transactions; the table model displays it in the
+     * Label column for the qubes-watch wallet. */
+    std::string qubeTag{};
     /**@}*/
 
     /** Subtransaction index, for sort key */

@@ -396,6 +396,13 @@ QString TransactionTableModel::formatTxToAddress(const TransactionRecord *wtx,
                            : "";
     }
 
+    // BCHN Dirty: Qube-protocol rows show their decoded type in the Label
+    // column (qubes-watch wallet only) instead of an address-book miss.
+    if (!wtx->qubeTag.empty() &&
+        walletModel->getWalletName() == QLatin1String("qubes-watch")) {
+        return QString::fromStdString(wtx->qubeTag) + watchAddress;
+    }
+
     switch (wtx->type) {
         case TransactionRecord::RecvFromOther:
             return QString::fromStdString(wtx->address) + watchAddress;
