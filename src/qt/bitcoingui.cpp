@@ -56,15 +56,25 @@
 #include <QApplication>
 #include <QComboBox>
 #include <QDateTime>
+#include <QActionGroup>
+#include <QDateTime>
 #include <QDir>
 #include <QDragEnterEvent>
 #include <QFileDialog>
+#include <QFontMetrics>
+#include <QGraphicsOpacityEffect>
 #include <QKeyEvent>
 #include <QListWidget>
 #include <QMouseEvent>
+#include <QPainter>
+#include <QDesktopServices>
 #include <QProcess>
+#include <QPropertyAnimation>
+#include <QPushButton>
+#include <QUrl>
 #include <QRandomGenerator>
 #include <QStandardPaths>
+#include <QVariantAnimation>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
@@ -82,6 +92,9 @@
 #include <QUrlQuery>
 #include <QVBoxLayout>
 #include <QWindow>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QTcpSocket>
 
 const std::string BitcoinGUI::DEFAULT_UIPLATFORM =
 #if defined(Q_OS_MAC)
@@ -92,6 +105,50 @@ const std::string BitcoinGUI::DEFAULT_UIPLATFORM =
     "other"
 #endif
     ;
+
+namespace {
+// A QLabel that paints its text so the actual visible ink is centred inside
+// the widget rect. Bypasses QLabel's default AlignCenter (which centres by
+// advance width and inherits font side-bearings + trailing letter-space
+// bias). Guarantees two OpticalCenterLabels stacked in a centred layout
+// share the same optical centre regardless of font, size, or letter-spacing.
+class OpticalCenterLabel : public QLabel {
+public:
+    explicit OpticalCenterLabel(QWidget *parent = nullptr) : QLabel(parent) {
+        // Expand horizontally so the layout gives us the full column
+        // width. Ink is then centred inside our wide widget rect, which
+        // matches the column centre — guarantees perfect alignment with
+        // any other OpticalCenterLabel stacked above or below.
+        setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::Fixed);
+    }
+    void setTextColor(const QColor &c) { m_color = c; update(); }
+    QSize sizeHint() const override {
+        const QFontMetrics fm(font());
+        return QSize(0, fm.height() + 6);
+    }
+    QSize minimumSizeHint() const override {
+        const QFontMetrics fm(font());
+        return QSize(fm.horizontalAdvance(text()), fm.height() + 6);
+    }
+protected:
+    void paintEvent(QPaintEvent *) override {
+        if (text().isEmpty()) return;
+        QPainter p(this);
+        p.setRenderHint(QPainter::TextAntialiasing);
+        p.setFont(font());
+        p.setPen(m_color.isValid() ? m_color
+                                   : palette().color(foregroundRole()));
+        const QFontMetrics fm(font());
+        const QRect tight = fm.tightBoundingRect(text());
+        // Centre the ink rectangle inside the widget rect.
+        const int x = (width() - tight.width()) / 2 - tight.left();
+        const int y = (height() + fm.ascent() - fm.descent()) / 2;
+        p.drawText(x, y, text());
+    }
+private:
+    QColor m_color;
+};
+}  // namespace
 
 BitcoinGUI::BitcoinGUI(interfaces::Node &node, const Config *configIn,
                        const PlatformStyle *_platformStyle,
@@ -255,20 +312,21 @@ BitcoinGUI::BitcoinGUI(interfaces::Node &node, const Config *configIn,
     blockRow->addStretch(1);
     frameBlocksLayout->addLayout(blockRow);
 
-    // Bottom: "BLOCK" caption sits under the number.
-    auto *blockCaption = new QLabel(tr("BLOCK"));
+    // Bottom: "BLOCK" caption sits under the number. Kept as a member so the
+    // Qube memory clock can relabel it MEMORY when the qubes-watch wallet is up.
+    m_blockCaption = new QLabel(tr("BLOCK"));
     {
         QFont cf(QStringLiteral("Rajdhani"));
         cf.setPointSize(9);
         cf.setWeight(QFont::DemiBold);
         cf.setCapitalization(QFont::AllUppercase);
         cf.setLetterSpacing(QFont::AbsoluteSpacing, 4.0);
-        blockCaption->setFont(cf);
-        blockCaption->setStyleSheet(QStringLiteral(
+        m_blockCaption->setFont(cf);
+        m_blockCaption->setStyleSheet(QStringLiteral(
             "QLabel { color: #7B857F; background: transparent; }"));
-        blockCaption->setAlignment(Qt::AlignHCenter);
+        m_blockCaption->setAlignment(Qt::AlignHCenter);
     }
-    frameBlocksLayout->addWidget(blockCaption);
+    frameBlocksLayout->addWidget(m_blockCaption);
     frameBlocksLayout->addStretch(1);
 
     // Progress bar and label for blocks download
@@ -295,6 +353,13 @@ BitcoinGUI::BitcoinGUI(interfaces::Node &node, const Config *configIn,
     statusBar()->addWidget(progressBarLabel);
     statusBar()->addWidget(progressBar);
     statusBar()->addPermanentWidget(frameBlocks);
+
+    // Qube memory clock: a network manager + a 2s poll of the local qubed,
+    // started only while the qubes-watch wallet is active (applyQubeWatchMode).
+    m_qubeMemTimer = new QTimer(this);
+    m_qubeMemTimer->setInterval(2000);
+    connect(m_qubeMemTimer, &QTimer::timeout, this,
+            &BitcoinGUI::pollQubeMemory);
 
     // Install event filter to be able to catch status tip events
     // (QEvent::StatusTip)
@@ -679,6 +744,70 @@ void BitcoinGUI::createToolBars() {
         toolbar->hide();
 
 #ifdef ENABLE_WALLET
+        // QUBES launcher (BCHN Dirty): top-left twin of the wallet selector.
+        // Probes the local qubed (127.0.0.1:8787); if it's awake, opens its
+        // UI — otherwise runs the configured launch command (QSettings
+        // "qubedLaunchCmd", else env QUBED_LAUNCH) and then opens it.
+        auto *qubesBtn = new QPushButton(QStringLiteral("QUBES"));
+        {
+            QFont qf(QStringLiteral("Orbitron"));
+            qf.setPointSize(11);
+            qf.setWeight(QFont::Bold);
+            qf.setLetterSpacing(QFont::AbsoluteSpacing, 2.0);
+            qubesBtn->setFont(qf);
+        }
+        qubesBtn->setCursor(Qt::PointingHandCursor);
+        qubesBtn->setToolTip(
+            tr("Wake the Qubes daemon and open its interface"));
+        qubesBtn->setStyleSheet(QStringLiteral(
+            "QPushButton { color: #9D4EDD; background: transparent; "
+            "border: 1px solid #9D4EDD; border-radius: 8px; "
+            "padding: 5px 16px; }"
+            "QPushButton:hover { background: rgba(157,78,221,0.16); }"
+            "QPushButton:pressed { background: rgba(157,78,221,0.32); }"));
+        connect(qubesBtn, &QPushButton::clicked, this, [this]() {
+            const QUrl url(QStringLiteral("http://127.0.0.1:8787"));
+            auto *probe = new QTcpSocket(this);
+            auto *decide = new QTimer(probe);
+            decide->setSingleShot(true);
+            // One decision point (no error/timeout double-fire): after the
+            // grace period, connected = open; anything else = launch + open.
+            connect(decide, &QTimer::timeout, this, [this, probe, url]() {
+                const bool awake =
+                    probe->state() == QAbstractSocket::ConnectedState;
+                probe->abort();
+                probe->deleteLater();
+                if (awake) {
+                    QDesktopServices::openUrl(url);
+                    return;
+                }
+                QSettings settings;
+                QString cmd =
+                    settings.value(QStringLiteral("qubedLaunchCmd"))
+                        .toString();
+                if (cmd.isEmpty()) {
+                    cmd = qEnvironmentVariable("QUBED_LAUNCH");
+                }
+                if (!cmd.isEmpty()) {
+#ifdef WIN32
+                    QProcess::startDetached(
+                        QStringLiteral("cmd.exe"),
+                        {QStringLiteral("/c"), cmd});
+#else
+                    QProcess::startDetached(cmd, {});
+#endif
+                    QTimer::singleShot(2200, this, [url]() {
+                        QDesktopServices::openUrl(url);
+                    });
+                } else {
+                    QDesktopServices::openUrl(url); // best effort
+                }
+            });
+            probe->connectToHost(QStringLiteral("127.0.0.1"), 8787);
+            decide->start(900);
+        });
+        toolbar->addWidget(qubesBtn);
+
         QWidget *spacer = new QWidget();
         spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
         toolbar->addWidget(spacer);
@@ -846,6 +975,19 @@ void BitcoinGUI::setCurrentWallet(WalletModel *wallet_model) {
         return;
     }
     walletFrame->setCurrentWallet(wallet_model);
+    // The cockpit clock card is a singleton widget installed into one overview
+    // page. Each wallet has its own overview page, so move the card into the
+    // now-active wallet's page on every switch — otherwise it only shows on the
+    // first wallet it was installed into (and vanishes on all the others).
+    // installNetworkStatusWidget reparents + re-adds, so this is safe to repeat.
+    if (m_frameBlocks) {
+        if (auto *wv = walletFrame->currentWalletView()) {
+            if (auto *op = wv->getOverviewPage()) {
+                op->installNetworkStatusWidget(m_frameBlocks);
+                statusBar()->hide();
+            }
+        }
+    }
     for (int index = 0; index < m_wallet_selector->count(); ++index) {
         if (m_wallet_selector->itemData(index).value<WalletModel *>() ==
             wallet_model) {
@@ -1236,18 +1378,37 @@ void BitcoinGUI::setNumBlocks(int count, const QDateTime &blockDate, const QStri
     if (m_lblBlocksText) {
         const QString formatted =
             QLocale::system().toString(qulonglong(count));
-        m_lblBlocksText->setText(formatted);
+        // While the qubes-watch wallet is active the cockpit number belongs to
+        // the Qube's memory height (driven by pollQubeMemory); don't clobber it
+        // with the chain height. The fullscreen block clock still tracks chain.
+        if (!m_qubeWatchActive) {
+            m_lblBlocksText->setText(formatted);
+        }
         if (m_blockFullscreenLabel) {
             m_blockFullscreenLabel->setText(formatted);
         }
-        // Block-clock chime: play the system beep on a real +1 tip
-        // update when the user is watching the full-screen counter.
-        // Filter out IBD spam (headers-only, <99.9% verified) and the
-        // initial startup count.
+        if (m_blockFullscreenLabelRed) {
+            m_blockFullscreenLabelRed->setText(formatted);
+        }
+        if (m_blockFullscreenLabelBlue) {
+            m_blockFullscreenLabelBlue->setText(formatted);
+        }
+        // Block-clock reaction: fire sound + shockwave animation on a
+        // real +1 tip update when the user is watching the full-screen
+        // counter. Filter out IBD spam (headers-only, <99.9% verified)
+        // and the initial startup count.
         if (!header && nVerificationProgress > 0.999 &&
-            m_lastBlockCount >= 0 && count > m_lastBlockCount &&
-            m_blockFullscreen && m_blockFullscreen->isVisible()) {
-            playRandomBlockSound();
+            m_lastBlockCount >= 0 && count > m_lastBlockCount) {
+            // Record timestamp for the elapsed-since-last-block ticker
+            // + colour gradient — regardless of whether the fullscreen
+            // viewer is currently open, so it reflects reality on next
+            // open.
+            m_lastBlockTimeMs = QDateTime::currentMSecsSinceEpoch();
+            if (m_blockFullscreen && m_blockFullscreen->isVisible()) {
+                playRandomBlockSound();
+                playBlockAnimation();
+                updateBlockClockTick();
+            }
         }
         m_lastBlockCount = count;
     }
@@ -1427,13 +1588,17 @@ bool BitcoinGUI::eventFilter(QObject *object, QEvent *event) {
     // Close the fullscreen viewer on left-click or Escape; right-click
     // opens the block-clock context menu (sounds toggle / folder / test).
     if (object == m_blockFullscreen) {
+        auto hideAndStop = [this]() {
+            if (m_blockClockTimer) m_blockClockTimer->stop();
+            m_blockFullscreen->hide();
+        };
         if (event->type() == QEvent::MouseButtonPress) {
             auto *me = static_cast<QMouseEvent *>(event);
             if (me->button() == Qt::RightButton) {
                 showBlockClockContextMenu(me->globalPos());
                 return true;
             }
-            m_blockFullscreen->hide();
+            hideAndStop();
             return true;
         }
         if (event->type() == QEvent::KeyPress) {
@@ -1441,13 +1606,64 @@ bool BitcoinGUI::eventFilter(QObject *object, QEvent *event) {
             if (ke->key() == Qt::Key_Escape ||
                 ke->key() == Qt::Key_Q ||
                 ke->key() == Qt::Key_F11) {
-                m_blockFullscreen->hide();
+                hideAndStop();
                 return true;
             }
         }
     }
     return QMainWindow::eventFilter(object, event);
 }
+
+// Full-screen "pond ripple" overlay: transparent, mouse-through widget
+// that paints one or more expanding rings from center outward. Driven
+// externally by QVariantAnimation ticks calling setRadius().
+class BlockShockwave : public QWidget {
+public:
+    explicit BlockShockwave(QWidget *parent) : QWidget(parent) {
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        setAttribute(Qt::WA_TranslucentBackground);
+    }
+    void setRadius(int r) { m_radius = r; update(); }
+    void setMaxRadius(int r) { m_maxRadius = r; }
+
+protected:
+    void paintEvent(QPaintEvent *) override {
+        if (m_radius <= 0) return;
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+        p.setBrush(Qt::NoBrush);
+        const QPoint center(width() / 2, height() / 2);
+        const int maxR = m_maxRadius > 0 ? m_maxRadius
+                                          : qMax(width(), height());
+        auto alphaAt = [maxR](int r) {
+            const qreal t = qreal(r) / qreal(maxR);
+            return int(qBound(0.0, 220.0 * (1.0 - t), 220.0));
+        };
+        // Leading green ring — the primary shockwave.
+        QPen pen1(QColor(10, 193, 142, alphaAt(m_radius)));
+        pen1.setWidth(6);
+        p.setPen(pen1);
+        p.drawEllipse(center, m_radius, m_radius);
+        // Purple trailing ring, offset behind by ~60px.
+        if (m_radius > 60) {
+            QPen pen2(QColor(157, 78, 221, alphaAt(m_radius - 60) / 2));
+            pen2.setWidth(3);
+            p.setPen(pen2);
+            p.drawEllipse(center, m_radius - 60, m_radius - 60);
+        }
+        // Second green ring even further back, fainter — pond-ripple layering.
+        if (m_radius > 130) {
+            QPen pen3(QColor(10, 193, 142, alphaAt(m_radius - 130) / 3));
+            pen3.setWidth(2);
+            p.setPen(pen3);
+            p.drawEllipse(center, m_radius - 130, m_radius - 130);
+        }
+    }
+
+private:
+    int m_radius = 0;
+    int m_maxRadius = 0;
+};
 
 void BitcoinGUI::showBlockCountFullscreen() {
     if (!m_blockFullscreen) {
@@ -1462,34 +1678,73 @@ void BitcoinGUI::showBlockCountFullscreen() {
         v->setContentsMargins(0, 0, 0, 0);
         v->addStretch(1);
 
+        // 1) Elapsed ticker on top. Uses OpticalCenterLabel which
+        //    paints its ink centred inside its own widget rect, so
+        //    it always aligns perfectly with the BLOCK caption below.
+        {
+            auto *l = new OpticalCenterLabel(m_blockFullscreen);
+            QFont f;
+            f.setFamilies({QStringLiteral("JetBrains Mono"),
+                           QStringLiteral("Consolas"),
+                           QStringLiteral("Courier New")});
+            f.setPixelSize(18);
+            f.setLetterSpacing(QFont::AbsoluteSpacing, 8);
+            l->setFont(f);
+            l->setTextColor(QColor(0x4A, 0x54, 0x4F));
+            v->addWidget(l);
+            m_blockElapsedLabel = l;
+        }
+
+        // 2) BLOCK caption sits directly beneath the ticker.
+        {
+            auto *l = new OpticalCenterLabel(m_blockFullscreen);
+            l->setText(tr("BLOCK"));
+            QFont f;
+            f.setFamilies({QStringLiteral("Rajdhani"),
+                           QStringLiteral("Inter")});
+            f.setPixelSize(32);
+            f.setWeight(QFont::DemiBold);
+            f.setLetterSpacing(QFont::AbsoluteSpacing, 8);
+            l->setFont(f);
+            l->setTextColor(QColor(0x7B, 0x85, 0x7F));
+            v->addSpacing(6);
+            v->addWidget(l);
+        }
+
+        // 3) The huge block number.
         m_blockFullscreenLabel =
             new QLabel(m_lblBlocksText ? m_lblBlocksText->text() : QString(),
                        m_blockFullscreen);
         m_blockFullscreenLabel->setAlignment(Qt::AlignCenter);
-        // Compute font size from screen height so the number fills the
-        // viewport regardless of display resolution. QSS overrides
-        // setFont(), so specify font-* inside the widget stylesheet.
-        int fsPx = 260;
-        if (auto *scr = QApplication::primaryScreen()) {
-            fsPx = int(scr->geometry().height() * 0.32);
-        }
-        m_blockFullscreenLabel->setStyleSheet(QStringLiteral(
-            "QLabel { color: #0AC18E; background: transparent; "
-            "font-family: 'Orbitron','JetBrains Mono',monospace; "
-            "font-size: %1px; font-weight: 900; letter-spacing: 12px; }")
-                .arg(fsPx));
+        setBlockLabelScale(1.0);
+        v->addSpacing(8);
         v->addWidget(m_blockFullscreenLabel, 0, Qt::AlignCenter);
 
-        auto *caption = new QLabel(tr("BLOCK"), m_blockFullscreen);
-        caption->setAlignment(Qt::AlignCenter);
-        caption->setStyleSheet(QStringLiteral(
-            "QLabel { color: #7B857F; background: transparent; "
-            "font-family: 'Rajdhani','Inter',sans-serif; "
-            "font-size: 32px; font-weight: 600; letter-spacing: 24px; }"));
-        v->addWidget(caption, 0, Qt::AlignCenter);
+        // RGB-split "chromatic aberration" clones — hidden by default,
+        // faded in briefly by playBlockAnimation() for the digital
+        // distortion beat. Children of the main label so they inherit
+        // its position (including screen shake).
+        auto makeRgbClone = [this](const QColor &c, int dx) -> QLabel * {
+            auto *l = new QLabel(m_blockFullscreenLabel->text(),
+                                 m_blockFullscreenLabel);
+            l->setAlignment(Qt::AlignCenter);
+            l->setStyleSheet(QStringLiteral(
+                "QLabel { color: rgba(%1,%2,%3,255); background: transparent; "
+                "font-family: 'Orbitron','JetBrains Mono',monospace; "
+                "font-weight: 900; letter-spacing: 10px; }")
+                    .arg(c.red()).arg(c.green()).arg(c.blue()));
+            auto *op = new QGraphicsOpacityEffect(l);
+            op->setOpacity(0.0);
+            l->setGraphicsEffect(op);
+            l->setAttribute(Qt::WA_TransparentForMouseEvents);
+            (void)dx; // Positioned in playBlockAnimation() so it can shake.
+            return l;
+        };
+        m_blockFullscreenLabelRed  = makeRgbClone(QColor(255, 60, 60), -8);
+        m_blockFullscreenLabelBlue = makeRgbClone(QColor(60, 120, 255), 8);
 
         auto *hint = new QLabel(
-            tr("Esc or click to exit  ·  Right-click for sounds"),
+            tr("Esc or click to exit  ·  Right-click for sounds + animations"),
             m_blockFullscreen);
         hint->setAlignment(Qt::AlignCenter);
         hint->setStyleSheet(QStringLiteral(
@@ -1500,17 +1755,275 @@ void BitcoinGUI::showBlockCountFullscreen() {
         v->addWidget(hint, 0, Qt::AlignCenter);
         v->addStretch(1);
 
+        // Full-screen shockwave overlay — sits above the layout, sized to
+        // fill the widget. Raised to top so its rings paint over the number.
+        m_blockShockwave = new BlockShockwave(m_blockFullscreen);
+        m_blockShockwave->setGeometry(m_blockFullscreen->rect());
+        m_blockShockwave->raise();
+
+        // Timer drives the elapsed-time ticker + colour gradient. 500ms
+        // is fast enough that the colour fade looks smooth and cheap
+        // enough that per-tick stylesheet churn doesn't matter.
+        m_blockClockTimer = new QTimer(m_blockFullscreen);
+        m_blockClockTimer->setInterval(500);
+        connect(m_blockClockTimer, &QTimer::timeout, this,
+                &BitcoinGUI::updateBlockClockTick);
+
         // Click anywhere on the widget to close.
         m_blockFullscreen->installEventFilter(this);
     }
-    // Sync the label in case blocks arrived between opens.
+    // Sync all three label copies in case blocks arrived between opens.
     if (m_blockFullscreenLabel && m_lblBlocksText) {
-        m_blockFullscreenLabel->setText(m_lblBlocksText->text());
+        const QString t = m_lblBlocksText->text();
+        m_blockFullscreenLabel->setText(t);
+        if (m_blockFullscreenLabelRed)  m_blockFullscreenLabelRed->setText(t);
+        if (m_blockFullscreenLabelBlue) m_blockFullscreenLabelBlue->setText(t);
+    }
+    // Multi-monitor: pick the screen saved in settings if it still
+    // exists; otherwise fall back to the screen containing the parent
+    // window, then primary.
+    QScreen *chosenScreen = nullptr;
+    {
+        QSettings s;
+        const QString wanted = s.value("blockClock/screenName").toString();
+        for (auto *scr : QApplication::screens()) {
+            if (scr->name() == wanted) { chosenScreen = scr; break; }
+        }
+        if (!chosenScreen) {
+            chosenScreen = QApplication::screenAt(pos()) ?
+                           QApplication::screenAt(pos()) :
+                           QApplication::primaryScreen();
+        }
+    }
+    if (chosenScreen) {
+        m_blockFullscreen->setGeometry(chosenScreen->geometry());
+        m_blockFullscreen->windowHandle()
+            ? m_blockFullscreen->windowHandle()->setScreen(chosenScreen)
+            : (void)0;
+    }
+    // Compute font size for the current chosen screen (recompute each
+    // show so switching monitors resizes correctly).
+    {
+        QScreen *sizeScr = chosenScreen ? chosenScreen
+                                        : QApplication::primaryScreen();
+        if (sizeScr) {
+            const QRect geo = sizeScr->geometry();
+            int fsPx = int(geo.height() * 0.30);
+            QFont probe(QStringLiteral("Orbitron"));
+            probe.setPixelSize(fsPx);
+            probe.setWeight(QFont::Black);
+            probe.setLetterSpacing(QFont::AbsoluteSpacing, 10.0);
+            QFontMetrics fm(probe);
+            const int actualWidth = fm.horizontalAdvance("999,999");
+            const int maxWidth = int(geo.width() * 0.85);
+            if (actualWidth > maxWidth) {
+                fsPx = int(qreal(fsPx) * qreal(maxWidth) / qreal(actualWidth));
+            }
+            m_baseBlockFontSize = fsPx;
+            setBlockLabelScale(1.0);
+        }
     }
     m_blockFullscreen->showFullScreen();
+    // On some Qt/Windows combos setScreen only takes after the window
+    // is shown — re-apply post-show to guarantee the correct display.
+    if (chosenScreen && m_blockFullscreen->windowHandle()) {
+        m_blockFullscreen->windowHandle()->setScreen(chosenScreen);
+        m_blockFullscreen->setGeometry(chosenScreen->geometry());
+    }
+    if (m_blockClockTimer) m_blockClockTimer->start();
+    updateBlockClockTick();
+    // Now that the window has its final geometry, size the shockwave
+    // overlay to match and align the RGB clones with the main label.
+    if (m_blockShockwave) {
+        m_blockShockwave->setGeometry(m_blockFullscreen->rect());
+        m_blockShockwave->setMaxRadius(
+            int(std::hypot(m_blockFullscreen->width(),
+                            m_blockFullscreen->height()) / 2));
+    }
+    if (m_blockFullscreenLabel) {
+        const QRect r = m_blockFullscreenLabel->rect();
+        if (m_blockFullscreenLabelRed) {
+            m_blockFullscreenLabelRed->setGeometry(r.translated(-8, 0));
+        }
+        if (m_blockFullscreenLabelBlue) {
+            m_blockFullscreenLabelBlue->setGeometry(r.translated(8, 0));
+        }
+    }
     m_blockFullscreen->raise();
     m_blockFullscreen->activateWindow();
     m_blockFullscreen->setFocus();
+}
+
+void BitcoinGUI::setBlockLabelScale(qreal scale) {
+    if (!m_blockFullscreenLabel) return;
+    const int sz = int(m_baseBlockFontSize * scale);
+    const QColor &c = m_currentBlockColor;
+    m_blockFullscreenLabel->setStyleSheet(QStringLiteral(
+        "QLabel { color: rgb(%1,%2,%3); background: transparent; "
+        "font-family: 'Orbitron','JetBrains Mono',monospace; "
+        "font-size: %4px; font-weight: 900; letter-spacing: 10px; }")
+            .arg(c.red()).arg(c.green()).arg(c.blue()).arg(sz));
+    if (m_blockFullscreenLabelRed) {
+        m_blockFullscreenLabelRed->setStyleSheet(QStringLiteral(
+            "QLabel { color: rgb(255,60,60); background: transparent; "
+            "font-family: 'Orbitron','JetBrains Mono',monospace; "
+            "font-size: %1px; font-weight: 900; letter-spacing: 10px; }")
+                .arg(sz));
+        m_blockFullscreenLabelRed->setGeometry(
+            m_blockFullscreenLabel->rect().translated(-8, 0));
+    }
+    if (m_blockFullscreenLabelBlue) {
+        m_blockFullscreenLabelBlue->setStyleSheet(QStringLiteral(
+            "QLabel { color: rgb(60,120,255); background: transparent; "
+            "font-family: 'Orbitron','JetBrains Mono',monospace; "
+            "font-size: %1px; font-weight: 900; letter-spacing: 10px; }")
+                .arg(sz));
+        m_blockFullscreenLabelBlue->setGeometry(
+            m_blockFullscreenLabel->rect().translated(8, 0));
+    }
+}
+
+void BitcoinGUI::updateBlockClockTick() {
+    if (!m_blockFullscreen || !m_blockFullscreen->isVisible()) return;
+    // Elapsed since last observed new-block-with-tip event.
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const qint64 elapsedMs = m_lastBlockTimeMs > 0 ? (now - m_lastBlockTimeMs)
+                                                   : 0;
+    if (m_blockElapsedLabel) {
+        QString txt;
+        if (m_lastBlockTimeMs == 0) {
+            txt = tr("— waiting for tip update —");
+        } else {
+            const qint64 s = elapsedMs / 1000;
+            if (s < 60) {
+                txt = tr("%1s SINCE").arg(s);
+            } else if (s < 3600) {
+                txt = tr("%1m %2s SINCE").arg(s / 60).arg(s % 60);
+            } else {
+                txt = tr("%1h %2m SINCE").arg(s / 3600).arg((s / 60) % 60);
+            }
+        }
+        m_blockElapsedLabel->setText(txt);
+    }
+    // Colour gradient: green (#0AC18E) → yellow (#FFDC00) at 10min,
+    // yellow → red (#E83C3C) at 20min. Beyond 20min stays solid red.
+    const qint64 tenMin = 10 * 60 * 1000;
+    QColor c;
+    if (m_lastBlockTimeMs == 0 || elapsedMs <= 0) {
+        c = QColor(10, 193, 142);
+    } else if (elapsedMs <= tenMin) {
+        const qreal t = qreal(elapsedMs) / qreal(tenMin);
+        c = QColor(int(10 + (255 - 10) * t),
+                   int(193 + (220 - 193) * t),
+                   int(142 * (1.0 - t)));
+    } else if (elapsedMs <= 2 * tenMin) {
+        const qreal t = qreal(elapsedMs - tenMin) / qreal(tenMin);
+        c = QColor(int(255 - (255 - 232) * t),
+                   int(220 - 220 * t),
+                   int(60 * t));
+    } else {
+        c = QColor(232, 60, 60);
+    }
+    if (c != m_currentBlockColor) {
+        m_currentBlockColor = c;
+        setBlockLabelScale(1.0);
+    }
+}
+
+void BitcoinGUI::playBlockAnimation() {
+    QSettings s;
+    if (!s.value("blockClock/animationsEnabled", true).toBool()) {
+        return;
+    }
+    if (!m_blockFullscreenLabel || !m_blockFullscreen->isVisible()) return;
+
+    // 1. Screen shake — decaying wobble on the label position.
+    {
+        auto *ka = new QPropertyAnimation(m_blockFullscreenLabel, "pos",
+                                          m_blockFullscreenLabel);
+        const QPoint p0 = m_blockFullscreenLabel->pos();
+        ka->setDuration(500);
+        ka->setKeyValueAt(0.00, p0);
+        ka->setKeyValueAt(0.08, p0 + QPoint( 18, -12));
+        ka->setKeyValueAt(0.18, p0 + QPoint(-14,  10));
+        ka->setKeyValueAt(0.30, p0 + QPoint( 10,  -8));
+        ka->setKeyValueAt(0.45, p0 + QPoint( -7,   6));
+        ka->setKeyValueAt(0.62, p0 + QPoint(  5,  -4));
+        ka->setKeyValueAt(0.80, p0 + QPoint( -3,   2));
+        ka->setEndValue(p0);
+        ka->start(QAbstractAnimation::DeleteWhenStopped);
+    }
+
+    // 2. Scale bump — grow to 112% then ease back with a slight bounce.
+    {
+        auto *sa = new QVariantAnimation(this);
+        sa->setDuration(650);
+        sa->setStartValue(1.0);
+        sa->setKeyValueAt(0.30, 1.12);
+        sa->setEndValue(1.0);
+        sa->setEasingCurve(QEasingCurve::OutBack);
+        connect(sa, &QVariantAnimation::valueChanged, this,
+                [this](const QVariant &v) { setBlockLabelScale(v.toReal()); });
+        sa->start(QAbstractAnimation::DeleteWhenStopped);
+    }
+
+    // 3. Glow flare — install a drop shadow on the label, animate blur
+    //    radius up and down. Re-installed each time so it's fresh.
+    {
+        auto *glow = new QGraphicsDropShadowEffect(m_blockFullscreenLabel);
+        glow->setColor(QColor(10, 193, 142, 220));
+        glow->setOffset(0, 0);
+        glow->setBlurRadius(0);
+        m_blockFullscreenLabel->setGraphicsEffect(glow);
+        auto *ga = new QVariantAnimation(m_blockFullscreenLabel);
+        ga->setDuration(700);
+        ga->setStartValue(0.0);
+        ga->setKeyValueAt(0.25, 80.0);
+        ga->setEndValue(0.0);
+        connect(ga, &QVariantAnimation::valueChanged, this,
+                [glow](const QVariant &v) {
+                    glow->setBlurRadius(v.toReal());
+                });
+        ga->start(QAbstractAnimation::DeleteWhenStopped);
+    }
+
+    // 4. Pond-ripple shockwave — expanding concentric rings from center.
+    if (m_blockShockwave) {
+        const int maxR = int(std::hypot(m_blockFullscreen->width(),
+                                         m_blockFullscreen->height()) / 2);
+        m_blockShockwave->setMaxRadius(maxR);
+        m_blockShockwave->raise();
+        auto *ra = new QVariantAnimation(m_blockShockwave);
+        ra->setDuration(900);
+        ra->setStartValue(0);
+        ra->setEndValue(maxR);
+        ra->setEasingCurve(QEasingCurve::OutQuart);
+        connect(ra, &QVariantAnimation::valueChanged, this,
+                [this](const QVariant &v) {
+                    if (m_blockShockwave) m_blockShockwave->setRadius(v.toInt());
+                });
+        connect(ra, &QVariantAnimation::finished, this, [this]() {
+            if (m_blockShockwave) m_blockShockwave->setRadius(0);
+        });
+        ra->start(QAbstractAnimation::DeleteWhenStopped);
+    }
+
+    // 5. Chromatic aberration flash — RGB split on the number.
+    auto flashClone = [this](QLabel *l) {
+        if (!l) return;
+        auto *op = qobject_cast<QGraphicsOpacityEffect *>(l->graphicsEffect());
+        if (!op) return;
+        auto *oa = new QVariantAnimation(l);
+        oa->setDuration(280);
+        oa->setStartValue(0.0);
+        oa->setKeyValueAt(0.35, 0.75);
+        oa->setEndValue(0.0);
+        connect(oa, &QVariantAnimation::valueChanged, l,
+                [op](const QVariant &v) { op->setOpacity(v.toReal()); });
+        oa->start(QAbstractAnimation::DeleteWhenStopped);
+    };
+    flashClone(m_blockFullscreenLabelRed);
+    flashClone(m_blockFullscreenLabelBlue);
 }
 
 void BitcoinGUI::playRandomBlockSound() {
@@ -1577,10 +2090,67 @@ void BitcoinGUI::showBlockClockContextMenu(const QPoint &globalPos) {
     QAction *actTest = menu.addAction(tr("Test random sound"));
     actTest->setEnabled(!folder.isEmpty());
 
+    menu.addSeparator();
+    const bool animEnabled =
+        s.value("blockClock/animationsEnabled", true).toBool();
+    QAction *actAnim = menu.addAction(tr("Enable block-found animations"));
+    actAnim->setCheckable(true);
+    actAnim->setChecked(animEnabled);
+
+    QAction *actTestAnim = menu.addAction(tr("Test animation"));
+
+    // Multi-monitor selector — only add when 2+ screens are attached.
+    menu.addSeparator();
+    QList<QScreen *> screens = QApplication::screens();
+    const QString currentScreenName =
+        s.value("blockClock/screenName",
+                m_blockFullscreen->screen()
+                    ? m_blockFullscreen->screen()->name()
+                    : QString()).toString();
+    QMenu *screenMenu = nullptr;
+    QList<QAction *> screenActions;
+    if (screens.size() > 1) {
+        screenMenu = menu.addMenu(tr("Show on display"));
+        auto *grp = new QActionGroup(screenMenu);
+        grp->setExclusive(true);
+        for (auto *scr : screens) {
+            const QRect g = scr->geometry();
+            QAction *a = screenMenu->addAction(
+                QStringLiteral("%1  (%2×%3)")
+                    .arg(scr->name()).arg(g.width()).arg(g.height()));
+            a->setCheckable(true);
+            a->setChecked(scr->name() == currentScreenName);
+            grp->addAction(a);
+            screenActions.append(a);
+        }
+    }
+
     QAction *chosen = menu.exec(globalPos);
     if (!chosen) return;
 
-    if (chosen == actEnable) {
+    // Multi-monitor: move fullscreen to the picked display.
+    for (int i = 0; i < screenActions.size(); ++i) {
+        if (chosen == screenActions[i]) {
+            QScreen *scr = screens.at(i);
+            s.setValue("blockClock/screenName", scr->name());
+            m_blockFullscreen->setGeometry(scr->geometry());
+            if (m_blockFullscreen->windowHandle()) {
+                m_blockFullscreen->windowHandle()->setScreen(scr);
+            }
+            m_blockFullscreen->showFullScreen();
+            m_blockFullscreen->raise();
+            return;
+        }
+    }
+
+    if (chosen == actAnim) {
+        s.setValue("blockClock/animationsEnabled", actAnim->isChecked());
+    } else if (chosen == actTestAnim) {
+        const bool wasEnabled = animEnabled;
+        if (!wasEnabled) s.setValue("blockClock/animationsEnabled", true);
+        playBlockAnimation();
+        if (!wasEnabled) s.setValue("blockClock/animationsEnabled", false);
+    } else if (chosen == actEnable) {
         s.setValue("blockClock/soundsEnabled", actEnable->isChecked());
     } else if (chosen == actFolder) {
         const QString start = folder.isEmpty()
@@ -1746,15 +2316,108 @@ void BitcoinGUI::updateWindowTitle() {
 #ifdef ENABLE_WALLET
     if (walletFrame) {
         WalletModel *const wallet_model = walletFrame->currentWalletModel();
+        const QString walletName =
+            wallet_model ? wallet_model->getWalletName() : QString();
         if (wallet_model && !wallet_model->getWalletName().isEmpty()) {
             window_title += " - " + wallet_model->getDisplayName();
         }
+        // The active wallet drives whether the cockpit clock shows the chain
+        // height or the living Qube's memory height.
+        applyQubeWatchMode(walletName);
     }
 #endif
     setWindowTitle(window_title);
     if (m_titleBar) {
         m_titleBar->setTitle(window_title);
     }
+}
+
+// Switch the cockpit clock between chain height (BLOCK) and the active Qube's
+// memory height (MEMORY), driven by whether the qubes-watch wallet is selected.
+void BitcoinGUI::applyQubeWatchMode(const QString &walletName) {
+    const bool active = (walletName == QStringLiteral("qubes-watch"));
+    if (active == m_qubeWatchActive) {
+        return; // no change
+    }
+    m_qubeWatchActive = active;
+    if (active) {
+        if (m_blockCaption) {
+            m_blockCaption->setText(tr("MEMORY"));
+        }
+        if (m_lblBlocksText) {
+            m_lblBlocksText->setText(QStringLiteral("…"));
+        }
+        pollQubeMemory(); // immediate first read, then on the timer
+        if (m_qubeMemTimer) {
+            m_qubeMemTimer->start();
+        }
+    } else {
+        if (m_qubeMemTimer) {
+            m_qubeMemTimer->stop();
+        }
+        if (m_blockCaption) {
+            m_blockCaption->setText(tr("BLOCK"));
+        }
+        // Restore the chain height we last saw (setNumBlocks kept tracking it).
+        if (m_lblBlocksText && m_lastBlockCount >= 0) {
+            m_lblBlocksText->setText(
+                QLocale::system().toString(qulonglong(m_lastBlockCount)));
+        }
+    }
+}
+
+// Poll the local qubed for the active Qube's memory-chain height. Uses a raw
+// QTcpSocket (not QNetworkAccessManager, which on this static Windows build
+// fails even a listening-localhost request via the system proxy/bearer layer):
+// a one-shot HTTP/1.0 GET, parsed when the server closes the connection.
+// `alive` shows the height; `locked` (up, vault sealed) shows LOCKED; a refused
+// or timed-out connection (qubed not running) shows a dash.
+void BitcoinGUI::pollQubeMemory() {
+    auto *sock = new QTcpSocket(this);
+    // Fail-safe: if nothing resolves in 1.5s (e.g. connection refused), show a
+    // dash and tear down. Parented to the socket so it dies with it.
+    auto *deadline = new QTimer(sock);
+    deadline->setSingleShot(true);
+
+    auto apply = [this](const QString &text) {
+        if (m_qubeWatchActive && m_lblBlocksText) {
+            m_lblBlocksText->setText(text);
+        }
+    };
+
+    connect(sock, &QTcpSocket::connected, this, [sock]() {
+        sock->write("GET /v1/blockclock HTTP/1.0\r\n"
+                    "Host: 127.0.0.1\r\n"
+                    "Connection: close\r\n\r\n");
+    });
+    // HTTP/1.0 + Connection: close → the server closes when done; read it all.
+    connect(sock, &QTcpSocket::disconnected, this, [this, sock, apply]() {
+        const QByteArray resp = sock->readAll();
+        const int sep = resp.indexOf("\r\n\r\n");
+        QString out = QStringLiteral("—");
+        if (sep >= 0) {
+            const QJsonObject obj =
+                QJsonDocument::fromJson(resp.mid(sep + 4)).object();
+            const QString state = obj.value(QStringLiteral("state")).toString();
+            if (state == QStringLiteral("alive") &&
+                obj.contains(QStringLiteral("height"))) {
+                out = QLocale::system().toString(static_cast<qulonglong>(
+                    obj.value(QStringLiteral("height")).toDouble()));
+            } else {
+                out = tr("LOCKED"); // up but vault sealed
+            }
+        }
+        apply(out);
+        sock->deleteLater();
+    });
+    connect(deadline, &QTimer::timeout, this, [sock, apply]() {
+        apply(QStringLiteral("—")); // qubed not answering
+        sock->abort();
+        sock->deleteLater();
+    });
+
+    sock->connectToHost(QStringLiteral("127.0.0.1"), 8787);
+    deadline->start(1500);
 }
 
 void BitcoinGUI::showNormalIfMinimized(bool fToggleHidden) {
