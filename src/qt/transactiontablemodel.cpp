@@ -413,8 +413,10 @@ QString TransactionTableModel::formatTxToAddress(const TransactionRecord *wtx,
                         QString::fromStdString(wtx->qubeAddr));
                 const QString qname = qlabel.section(QLatin1Char(' '), 0, 0);
                 if (!qname.isEmpty()) {
+                    // QStringLiteral, NOT QLatin1String: the middle dot is
+                    // multi-byte UTF-8 and Latin-1 mangles it into "Â·".
                     tag.replace(QLatin1String(" Qube "),
-                                QLatin1String(" ") + qname + QLatin1String(" · "));
+                                QStringLiteral(" ") + qname + QStringLiteral(" · "));
                 }
             }
             return tag + watchAddress;
