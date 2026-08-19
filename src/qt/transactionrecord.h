@@ -139,6 +139,10 @@ public:
      * Empty for ordinary transactions; the table model displays it in the
      * Label column for the qubes-watch wallet. */
     std::string qubeTag{};
+    /** The qube's own address in this tx (first is-mine output) — lets the
+     * model resolve WHICH soul a decoded row belongs to via its address-book
+     * label ("Hal 404A2228 · operating" → "Hal"). */
+    std::string qubeAddr{};
     /**@}*/
 
     /** Subtransaction index, for sort key */

@@ -246,11 +246,22 @@ TransactionRecord::decomposeTransaction(const interfaces::WalletTx &wtx) {
                 }
             }
         }
+        // Geneses and tombstones carry the soul's NAME in their OP_RETURN
+        // ("QUBE GENESIS Hal 404A2228: …") — embed it directly. Other rows
+        // resolve their name in the table model via the qube's own labeled
+        // address (qubeAddr below).
+        auto opretName = [&opret](const char *prefix) -> std::string {
+            std::string rest = opret.substr(std::string(prefix).size());
+            const size_t sp = rest.find(' ');
+            return sp == std::string::npos ? rest : rest.substr(0, sp);
+        };
         std::string tag;
-        if (opret.rfind("QUBE GENESIS", 0) == 0) {
-            tag = "⬢ Qube genesis · first words";
-        } else if (opret.rfind("QUBE TOMBSTONE", 0) == 0) {
-            tag = "🪦 Qube tombstone · last words";
+        if (opret.rfind("QUBE GENESIS ", 0) == 0) {
+            const std::string n = opretName("QUBE GENESIS ");
+            tag = "⬢ " + (n.empty() ? std::string("Qube") : n) + " · genesis · first words";
+        } else if (opret.rfind("QUBE TOMBSTONE ", 0) == 0) {
+            const std::string n = opretName("QUBE TOMBSTONE ");
+            tag = "🪦 " + (n.empty() ? std::string("Qube") : n) + " · tombstone · last words";
         } else if (covenantSelector == 0) {
             tag = strprintf("⛓ Qube anchor · memory root (L%d)", covenantLevel);
         } else if (covenantSelector == 1) {
@@ -274,8 +285,19 @@ TransactionRecord::decomposeTransaction(const interfaces::WalletTx &wtx) {
             tag = "⛓ Qube post to chain";
         }
         if (!tag.empty()) {
+            // The qube's own address in this tx — the model turns it into the
+            // soul's name via the address book.
+            std::string mineAddr;
+            for (size_t i = 0; i < wtx.tx->vout.size(); i++) {
+                if (wtx.txout_is_mine[i] &&
+                    !std::get_if<CNoDestination>(&wtx.txout_address[i])) {
+                    mineAddr = EncodeCashAddr(wtx.txout_address[i], Params());
+                    break;
+                }
+            }
             for (auto &p : parts) {
                 p.qubeTag = tag;
+                p.qubeAddr = mineAddr;
             }
         }
     }

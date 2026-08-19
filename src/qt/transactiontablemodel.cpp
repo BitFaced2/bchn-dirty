@@ -402,7 +402,22 @@ QString TransactionTableModel::formatTxToAddress(const TransactionRecord *wtx,
     // row in the list carries an icon.
     if (walletModel->getWalletName() == QLatin1String("qubes-watch")) {
         if (!wtx->qubeTag.empty()) {
-            return QString::fromStdString(wtx->qubeTag) + watchAddress;
+            QString tag = QString::fromStdString(wtx->qubeTag);
+            // Name the soul: its own address's book label leads with the name
+            // ("Hal 404A2228 · operating" → "Hal"), which replaces the
+            // generic "Qube" in the decoded tag. Names embedded at decode
+            // time (genesis/tombstone) contain no " Qube " and pass through.
+            if (tag.contains(QLatin1String(" Qube ")) && !wtx->qubeAddr.empty()) {
+                const QString qlabel =
+                    walletModel->getAddressTableModel()->labelForAddress(
+                        QString::fromStdString(wtx->qubeAddr));
+                const QString qname = qlabel.section(QLatin1Char(' '), 0, 0);
+                if (!qname.isEmpty()) {
+                    tag.replace(QLatin1String(" Qube "),
+                                QLatin1String(" ") + qname + QLatin1String(" · "));
+                }
+            }
+            return tag + watchAddress;
         }
         switch (wtx->type) {
             case TransactionRecord::RecvWithAddress:
