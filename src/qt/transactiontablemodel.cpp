@@ -397,10 +397,29 @@ QString TransactionTableModel::formatTxToAddress(const TransactionRecord *wtx,
     }
 
     // BCHN Dirty: Qube-protocol rows show their decoded type in the Label
-    // column (qubes-watch wallet only) instead of an address-book miss.
-    if (!wtx->qubeTag.empty() &&
-        walletModel->getWalletName() == QLatin1String("qubes-watch")) {
-        return QString::fromStdString(wtx->qubeTag) + watchAddress;
+    // column (qubes-watch wallet only) instead of an address-book miss —
+    // and labeled operating-address rows get their own mark, so every Qube
+    // row in the list carries an icon.
+    if (walletModel->getWalletName() == QLatin1String("qubes-watch")) {
+        if (!wtx->qubeTag.empty()) {
+            return QString::fromStdString(wtx->qubeTag) + watchAddress;
+        }
+        switch (wtx->type) {
+            case TransactionRecord::RecvWithAddress:
+            case TransactionRecord::SendToAddress:
+            case TransactionRecord::Generated: {
+                const QString label =
+                    walletModel->getAddressTableModel()->labelForAddress(
+                        QString::fromStdString(wtx->address));
+                if (label.contains(QLatin1String("operating"))) {
+                    return QStringLiteral("⚡ ") +
+                           lookupAddress(wtx->address, tooltip) + watchAddress;
+                }
+                break;
+            }
+            default:
+                break;
+        }
     }
 
     switch (wtx->type) {
