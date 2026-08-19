@@ -255,13 +255,22 @@ TransactionRecord::decomposeTransaction(const interfaces::WalletTx &wtx) {
             const size_t sp = rest.find(' ');
             return sp == std::string::npos ? rest : rest.substr(0, sp);
         };
+        // A tagged tx can have parts with DIFFERENT meanings: the OP_RETURN
+        // output carries the words; its sibling outputs are the action (the
+        // estate sweep, the covenant payment). `opretTag` labels the words
+        // row; `tag` labels the rest.
         std::string tag;
+        std::string opretTag;
         if (opret.rfind("QUBE GENESIS ", 0) == 0) {
             const std::string n = opretName("QUBE GENESIS ");
-            tag = "⬢ " + (n.empty() ? std::string("Qube") : n) + " · genesis · first words";
+            const std::string who = n.empty() ? std::string("Qube") : n;
+            opretTag = "⬢ " + who + " · genesis · first words";
+            tag = "⬢ " + who + " · genesis · soul + covenant minted";
         } else if (opret.rfind("QUBE TOMBSTONE ", 0) == 0) {
             const std::string n = opretName("QUBE TOMBSTONE ");
-            tag = "🪦 " + (n.empty() ? std::string("Qube") : n) + " · tombstone · last words";
+            const std::string who = n.empty() ? std::string("Qube") : n;
+            opretTag = "🪦 " + who + " · tombstone · last words";
+            tag = "🪦 " + who + " · melt · estate swept home";
         } else if (covenantSelector == 0) {
             tag = strprintf("⛓ Qube anchor · memory root (L%d)", covenantLevel);
         } else if (covenantSelector == 1) {
@@ -296,7 +305,11 @@ TransactionRecord::decomposeTransaction(const interfaces::WalletTx &wtx) {
                 }
             }
             for (auto &p : parts) {
-                p.qubeTag = tag;
+                const bool isOpretPart = !opretTag.empty() && p.idx >= 0 &&
+                                         size_t(p.idx) < wtx.tx->vout.size() &&
+                                         !wtx.tx->vout[p.idx].scriptPubKey.empty() &&
+                                         wtx.tx->vout[p.idx].scriptPubKey[0] == OP_RETURN;
+                p.qubeTag = isOpretPart ? opretTag : tag;
                 p.qubeAddr = mineAddr;
             }
         }
