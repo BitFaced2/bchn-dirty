@@ -193,18 +193,83 @@ TransactionRecord::decomposeTransaction(const interfaces::WalletTx &wtx) {
                 }
             }
         }
+        // The covenant's unlocking script names its function: the selector
+        // rides as the second-to-last push, just before the (large) redeem
+        // script — checkpointRoot=0, levelUp=1, addReserve=2, rotate=3,
+        // sell=4, melt=5. Precise, straight from the spend itself.
+        int covenantSelector = -1;
+        for (const CTxIn &txin : wtx.tx->vin) {
+            const CScript &u = txin.scriptSig;
+            std::vector<std::pair<opcodetype, std::vector<uint8_t>>> ops;
+            CScript::const_iterator it = u.begin();
+            opcodetype op;
+            std::vector<uint8_t> data;
+            bool parsed = true;
+            while (it < u.end()) {
+                data.clear();
+                if (!u.GetOp(it, op, data)) {
+                    parsed = false;
+                    break;
+                }
+                ops.emplace_back(op, data);
+            }
+            if (!parsed || ops.size() < 2 || ops.back().second.size() < 400) {
+                continue; // not a covenant spend (redeem scripts are big)
+            }
+            const auto &sel = ops[ops.size() - 2];
+            int v = -1;
+            if (sel.first == OP_0) {
+                v = 0;
+            } else if (sel.first >= OP_1 && sel.first <= OP_16) {
+                v = sel.first - OP_1 + 1;
+            } else if (sel.second.size() == 1) {
+                v = sel.second[0];
+            }
+            if (v >= 0) {
+                covenantSelector = v;
+                break;
+            }
+        }
+        // A genesis mints its category from the spent outpoint-0: token
+        // category == the first input's prevout txid. Catches hash-only
+        // geneses (no readable OP_RETURN) too.
+        bool genesisOut = false;
+        if (covenantOut && !wtx.tx->vin.empty()) {
+            const TxId &src = wtx.tx->vin[0].prevout.GetTxId();
+            for (const CTxOut &txout : wtx.tx->vout) {
+                if (txout.tokenDataPtr) {
+                    const auto &cat = txout.tokenDataPtr->GetId();
+                    if (std::equal(cat.begin(), cat.end(), src.begin())) {
+                        genesisOut = true;
+                    }
+                    break;
+                }
+            }
+        }
         std::string tag;
         if (opret.rfind("QUBE GENESIS", 0) == 0) {
             tag = "⬢ Qube genesis · first words";
         } else if (opret.rfind("QUBE TOMBSTONE", 0) == 0) {
             tag = "🪦 Qube tombstone · last words";
+        } else if (covenantSelector == 0) {
+            tag = strprintf("⛓ Qube anchor · memory root (L%d)", covenantLevel);
+        } else if (covenantSelector == 1) {
+            tag = strprintf("⬆ Qube level-up → L%d", covenantLevel);
+        } else if (covenantSelector == 5) {
+            tag = "♻ Qube melt · reserve reclaimed";
+        } else if (covenantSelector == 2) {
+            tag = "💎 Qube reserve top-up";
+        } else if (covenantSelector == 3) {
+            tag = "🔑 Qube key rotation";
+        } else if (covenantSelector == 4) {
+            tag = "🤝 Qube sale";
+        } else if (genesisOut) {
+            tag = "⬢ Qube genesis";
         } else if (covenantOut) {
-            tag = strprintf("⛓ Qube covenant · anchor / level-up (L%d)",
-                            covenantLevel);
+            tag = strprintf("⛓ Qube covenant (L%d)", covenantLevel);
         } else if (!parts.isEmpty() &&
                    parts.last().type == TransactionRecord::SendToSelf) {
-            tag = !opret.empty() ? "⛓ Qube post to chain"
-                                 : "♻ Qube tidy / reserve reclaim";
+            tag = !opret.empty() ? "⛓ Qube post to chain" : "♻ Qube tidy";
         } else if (!opret.empty() && nNet < Amount::zero()) {
             tag = "⛓ Qube post to chain";
         }
