@@ -143,13 +143,42 @@ private:
     // we only beep on a genuine +1 in fully-synced state.
     QWidget *m_blockFullscreen = nullptr;
     QLabel *m_blockFullscreenLabel = nullptr;
+    QLabel *m_blockFullscreenLabelRed = nullptr;
+    QLabel *m_blockFullscreenLabelBlue = nullptr;
+    QLabel *m_blockElapsedLabel = nullptr;
+    class BlockShockwave *m_blockShockwave = nullptr;
+    class QTimer *m_blockClockTimer = nullptr;
+    int m_baseBlockFontSize = 260;
     int m_lastBlockCount = -1;
+    qint64 m_lastBlockTimeMs = 0;
+    QColor m_currentBlockColor = QColor(10, 193, 142);
     QString m_lastBlockSoundFile;
+    // Qube memory clock: when the "qubes-watch" wallet is active, the cockpit
+    // block number is repurposed to show the living Qube's memory-chain height
+    // (polled from the local qubed at 127.0.0.1:8787), captioned MEMORY instead
+    // of BLOCK. Shows a dash / LOCKED when qubed can't answer. Chain-height
+    // behaviour is untouched for every other wallet.
+    QLabel *m_blockCaption = nullptr;
+    class QTimer *m_qubeMemTimer = nullptr;
+    bool m_qubeWatchActive = false;
+    void applyQubeWatchMode(const QString &walletName);
+    void pollQubeMemory();
     void showBlockCountFullscreen();
+    // Called by m_blockClockTimer every ~500ms while the fullscreen
+    // viewer is visible: updates the "time since last block" ticker and
+    // interpolates the number colour green → yellow (10m) → red (20m).
+    void updateBlockClockTick();
     // Play a random WAV from the user-chosen sounds folder (if any and
     // if the block-clock sounds toggle is enabled). Uses platform-native
     // audio playback — no QtMultimedia dependency.
     void playRandomBlockSound();
+    // Fire the stacked bomb-drop / pond-ripple animation on the
+    // full-screen viewer: screen shake, scale bump, glow flare,
+    // expanding shockwave rings, and RGB-split chromatic aberration.
+    void playBlockAnimation();
+    // Rebuild the label stylesheet at a scale multiplier (1.0 = base
+    // size). Used by the scale-bump animation.
+    void setBlockLabelScale(qreal scale);
     // Context menu on the fullscreen widget: toggle sounds, pick a
     // sounds folder, and test.
     void showBlockClockContextMenu(const QPoint &globalPos);
