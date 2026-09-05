@@ -150,7 +150,11 @@ static constexpr int64_t MAX_FEE_ESTIMATION_TIP_AGE = 3 * 60 * 60;
 /** Default for -permitbaremultisig */
 static constexpr bool DEFAULT_PERMIT_BAREMULTISIG = true;
 static constexpr bool DEFAULT_CHECKPOINTS_ENABLED = true;
-static constexpr bool DEFAULT_TXINDEX = false;
+// BCHN Dirty: the tx index defaults ON — the Qubes daemon reads arbitrary
+// transactions (explain_tx, payment provenance), and the async index
+// framework builds it in the background even on an existing datadir, so
+// a "facelifted" vanilla node needs no reindex and no conf edits.
+static constexpr bool DEFAULT_TXINDEX = true;
 static constexpr unsigned int DEFAULT_BANSCORE_THRESHOLD = 100;
 
 /** Default for -persistmempool */
