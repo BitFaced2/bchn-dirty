@@ -668,6 +668,12 @@ int GuiMain(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
+    // BCHN Dirty: SERVE by default. The Qubes daemon speaks JSON-RPC on
+    // loopback (cookie auth when no credentials are configured), and vanilla
+    // qt's server-off default would leave the QUBES button knocking on a
+    // closed port. Soft-set only — bitcoin.conf and the command line win.
+    gArgs.SoftSetBoolArg("-server", true);
+
     /// 7. Determine network (and switch to network specific options)
     // - Do not call Params() before this step.
     // - Do this after parsing the configuration file, as the network can be
