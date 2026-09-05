@@ -259,6 +259,30 @@ TransactionRecord::decomposeTransaction(const interfaces::WalletTx &wtx) {
         // output carries the words; its sibling outputs are the action (the
         // estate sweep, the covenant payment). `opretTag` labels the words
         // row; `tag` labels the rest.
+        // Badge mint: an immutable NFT whose 36-byte commitment is
+        // skill_id(4) || soul category(32), minted BESIDE the platform's
+        // minting token in the same tx. Without this branch it falls through
+        // to "tidy" — which is what happened to Alph's first three badges
+        // (2026-08-31): named on-chain forever, nameless in the wallet.
+        std::string badgeName;
+        {
+            bool sawMinting = false;
+            std::string skill;
+            for (const CTxOut &txout : wtx.tx->vout) {
+                if (!txout.tokenDataPtr) continue;
+                if (txout.tokenDataPtr->IsMintingNFT()) sawMinting = true;
+                const auto &comm = txout.tokenDataPtr->GetCommitment();
+                if (txout.tokenDataPtr->IsImmutableNFT() && comm.size() == 36) {
+                    skill.assign(comm.begin(), comm.begin() + 4);
+                }
+            }
+            if (sawMinting && !skill.empty()) {
+                if (skill == "brth") badgeName = "First Breath";
+                else if (skill == "chrn") badgeName = "Chronicler";
+                else if (skill == "asnd") badgeName = "Ascendant";
+                else badgeName = skill; // future badges: show the raw tag
+            }
+        }
         std::string tag;
         std::string opretTag;
         if (opret.rfind("QUBE GENESIS ", 0) == 0) {
@@ -287,6 +311,8 @@ TransactionRecord::decomposeTransaction(const interfaces::WalletTx &wtx) {
             tag = "⬢ Qube genesis";
         } else if (covenantOut) {
             tag = strprintf("⛓ Qube covenant (L%d)", covenantLevel);
+        } else if (!badgeName.empty()) {
+            tag = "\xF0\x9F\x8E\x96 Qube badge minted \xC2\xB7 " + badgeName;
         } else if (!parts.isEmpty() &&
                    parts.last().type == TransactionRecord::SendToSelf) {
             tag = !opret.empty() ? "⛓ Qube post to chain" : "♻ Qube tidy";
