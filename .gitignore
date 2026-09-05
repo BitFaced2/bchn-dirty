@@ -144,3 +144,8 @@ nbproject/
 
 #Local Development Environment - Visual Studio Code
 .vscode
+
+# build outputs never belong in the repo
+build/
+build-linux/
+build-osx/
